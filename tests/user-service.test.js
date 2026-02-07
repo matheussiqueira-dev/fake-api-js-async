@@ -66,6 +66,36 @@ test('getStats returns aggregate indicators', async () => {
   const stats = await service.getStats();
 
   assert.equal(stats.totalUsers, seedUsers.length);
+  assert.equal(stats.activeUsers, seedUsers.length);
+  assert.equal(stats.deletedUsers, 0);
   assert.ok(Array.isArray(stats.topDomains));
   assert.ok(Array.isArray(stats.recentUsers));
+});
+
+test('soft delete removes user from default listing and restore adds it back', async () => {
+  const service = createService();
+
+  await service.deleteUser(2);
+  const withoutDeleted = await service.listUsers({ page: 1, limit: 20, sortBy: 'id' });
+  assert.equal(withoutDeleted.data.some((user) => user.id === 2), false);
+
+  const withDeleted = await service.listUsers({ page: 1, limit: 20, sortBy: 'id', includeDeleted: true }, { includeDeleted: true });
+  assert.equal(withDeleted.data.some((user) => user.id === 2), true);
+
+  await service.restoreUser(2);
+  const restored = await service.listUsers({ page: 1, limit: 20, sortBy: 'id' });
+  assert.equal(restored.data.some((user) => user.id === 2), true);
+});
+
+test('bulkCreateUsers creates records and skips duplicates when enabled', async () => {
+  const service = createService();
+
+  const result = await service.bulkCreateUsers([
+    { name: 'Nova Pessoa', email: 'nova.pessoa@example.com' },
+    { name: 'Duplicado', email: 'alice.johnson@example.com' }
+  ], { skipDuplicates: true });
+
+  assert.equal(result.summary.requested, 2);
+  assert.equal(result.summary.created, 1);
+  assert.equal(result.summary.skipped, 1);
 });

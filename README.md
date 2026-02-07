@@ -1,116 +1,131 @@
-# Fake API Async - Frontend Dashboard
+# Fake API JS Async - Backend Profissional
 
-Frontend profissional para gestao de usuarios em uma API assincrona simulada. A aplicacao foi redesenhada com foco em arquitetura escalavel, UX moderna, acessibilidade e performance de renderizacao.
+Backend HTTP em Node.js para gestao de usuarios com arquitetura modular, API versionada, seguranca por token Bearer, RBAC, rate limiting, auditoria e metricas operacionais.
 
-## Visao Geral do Frontend
+## Visao Geral do Backend
 
-O frontend atende um fluxo operacional de cadastro com alta produtividade:
-1. Buscar, filtrar e paginar usuarios.
-2. Criar, editar e excluir registros.
-3. Monitorar indicadores operacionais em tempo real.
-4. Exportar resultados filtrados para CSV.
+Dominio principal:
+- Gestao de usuarios (CRUD com soft delete e restore)
+- Estatisticas operacionais da base
+- Auditoria de eventos criticos
 
-Publico-alvo:
-- Times de produto e operacao que precisam de CRUD rapido e claro.
-- Desenvolvedores estudando arquitetura frontend sem framework.
-- Projetos que exigem base simples para evolucao futura.
+Regras de negocio principais:
+- Email unico entre usuarios ativos
+- Validacao rigorosa de entrada
+- Exclusao logica (soft delete), sem perda imediata de historico
+- Controle de acesso por papel (`admin`, `editor`, `viewer`)
 
-## Analise Tecnica do Frontend (estado anterior)
+## Analise Tecnica do Estado Inicial
 
-Pontos identificados antes desta rodada:
-- Logica concentrada em arquivo unico (`public/app.js`).
-- Alto acoplamento entre estado, eventos e renderizacao.
-- Pouca previsibilidade para evolucao de features.
-- Falta de persistencia de preferencias de usuario.
-- Ausencia de exportacao de dados e atalhos de produtividade.
+Antes do refactor backend, os principais pontos eram:
+- Roteamento e regras de infraestrutura concentrados em um unico arquivo.
+- Ausencia de autenticacao/autorizacao robusta.
+- Sem versionamento formal da API.
+- Baixa observabilidade (sem metricas estruturadas e auditoria completa).
+- Sem protecao consistente contra abuso (rate limit) e politicas de seguranca HTTP.
 
-## Refactor e Otimizacoes Aplicadas
+## Arquitetura Adotada
 
-### Arquitetura modular
-- Migracao para `type="module"` com separacao por responsabilidade:
-  - `public/js/api-client.js`: camada de acesso a dados.
-  - `public/js/state.js`: estado da UI + persistencia.
-  - `public/js/renderers.js`: renderizacao e estados visuais.
-  - `public/js/dom.js`: fabrica de elementos reutilizaveis.
-  - `public/js/utils.js`: formatacao, debounce e CSV.
-  - `public/js/feedback.js`: toasts e mensagens de erro.
-  - `public/js/main.js`: orquestracao de fluxos.
+Estilo: **modular monolith** com separacao por responsabilidades (inspirado em Clean Architecture).
 
-### Performance e renderizacao
-- Debounce na busca (`260ms`) para reduzir chamadas concorrentes.
-- Controle de corrida de requests (`inFlightUsersRequest`) para evitar render de resposta obsoleta.
-- Skeleton loading para feedback imediato durante fetch.
-- Renderizacao com `DocumentFragment` para minimizar repaints.
+Camadas:
+- **Bootstrap/Composition Root**: cria dependencias e contexto da aplicacao.
+- **Services (dominio/aplicacao)**: regras de usuarios, autenticacao e auditoria.
+- **Security**: token JWT-like assinado, hash de senha, RBAC e rate limiter.
+- **HTTP Adapter**: roteamento, validacao de request, serializacao de resposta e compatibilidade legada.
+- **Monitoring**: logs estruturados e metricas de requests.
 
-### Manutenibilidade
-- Reuso de componentes de acao (editar, copiar email, excluir).
-- Tokens de design centralizados no CSS (`:root`).
-- Separacao clara entre regra de negocio da UI e efeitos visuais.
-
-## UI/UX Refactor Completo
-
-Direcao visual aplicada:
-- Design system com tokens semanticos (cor, tipografia, espacamento, radius, sombra).
-- Tipografia intencional (`Sora` + `Manrope`).
-- Hierarquia visual forte entre painel principal e widgets laterais.
-- Fundo atmosferico com profundidade e identidade visual consistente.
-- Densidade alternavel (modo confortavel/compacto) para diferentes perfis de uso.
-
-Microinteracoes:
-- Feedback de hover/focus com contraste real.
-- Animacoes curtas para entrada de linhas e toasts.
-- `prefers-reduced-motion` respeitado.
-
-## Acessibilidade, SEO e Responsividade
-
-### Acessibilidade (WCAG-oriented)
-- `skip-link` para navegacao por teclado.
-- `aria-live` para feedback de operacoes.
-- `aria-busy` em regioes de carregamento.
-- estados de erro com `aria-invalid`.
-- foco visivel em elementos interativos.
-- estrutura semantica (`header`, `main`, `section`, `aside`, `dialog`).
-
-### SEO tecnico (contexto SPA simples)
-- `meta description`, `theme-color`, `og:title`, `og:description`, `og:type`.
-- hierarquia adequada de headings.
-
-### Responsividade
-- Layout adaptativo desktop/tablet/mobile.
-- Tabela em telas amplas e cards em telas menores.
-- Grade responsiva para toolbar, metricas e formulario.
-
-## Novas Features Implementadas
-
-1. Exportacao CSV (filtros aplicados)
-- Exporta resultados filtrados em multiplas paginas.
-- Valor para operacao e analise offline.
-
-2. Persistencia de filtros e preferencias
-- Busca/ordenacao/limite e densidade visual sao mantidos em `localStorage`.
-- Reduz friccao para usuarios recorrentes.
-
-3. Alternador de densidade visual
-- Modo compacto para cenarios de alta produtividade.
-- Modo confortavel para leitura prolongada.
-
-4. Acao rapida de copiar email
-- Melhora fluxo de contato e operacao.
-
-5. Atalho de teclado `Ctrl+K`
-- Foco imediato no campo de busca.
-- Acelera navegacao em ambientes operacionais.
-
-## Stack e Tecnologias
+## Tecnologias Utilizadas
 
 - Node.js 18+
-- HTML5 semantico
-- CSS3 com design tokens
-- JavaScript ES Modules (Vanilla)
-- API REST local (`/api/*`)
-- Testes backend com `node:test`
+- JavaScript (CommonJS)
+- API HTTP nativa (`node:http`)
+- `crypto` nativo para assinatura de token e hash de senha (`scrypt`)
+- Testes com `node:test` + `assert`
 
-## Setup, Execucao e Build
+## Refactor e Otimizacoes Implementadas
+
+### 1. Estrutura e desacoplamento
+- Introduzido `src/bootstrap/create-app-context.js` para injetar dependencias.
+- Quebra de responsabilidades em modulos dedicados:
+  - `src/services/*`
+  - `src/security/*`
+  - `src/monitoring/*`
+  - `server/create-server.js` com fluxo HTTP mais robusto
+
+### 2. Performance e confiabilidade
+- Rate limiting por IP em memoria.
+- Timeout de request configuravel para evitar pendencias indefinidas.
+- Uso de `Map` no `UserService` para acesso O(1) por ID.
+- Metricas de status, rota e latencia media.
+
+### 3. Padronizacao de erros
+- Erros tipados (`Validation`, `Unauthorized`, `Forbidden`, `Conflict`, `TooManyRequests`).
+- Payload de erro consistente com `code`, `message`, `details` e `requestId`.
+
+## Seguranca e Confiabilidade
+
+Implementacoes aplicadas:
+- **Autenticacao** via Bearer token assinado (HMAC SHA-256).
+- **Autorizacao RBAC**:
+  - `viewer`: leitura
+  - `editor`: criacao/edicao
+  - `admin`: exclusao, restore, auditoria, metricas, bulk
+- **Protecoes HTTP**:
+  - CSP
+  - X-Frame-Options
+  - X-Content-Type-Options
+  - Referrer-Policy
+  - Permissions-Policy
+  - HSTS
+- **Rate limiting** global para rotas `/api/*`.
+- **Validacao de payload** e limite de tamanho de body.
+- **CORS restrito** por allowlist configuravel.
+
+Observacao sobre ataques comuns:
+- SQLi nao se aplica diretamente ao estado atual em memoria (sem SQL), mas o design foi preparado para uso de repositorios e validacao na fronteira HTTP.
+- XSS mitigado por respostas JSON e politicas CSP.
+
+## API e Integracoes
+
+### Compatibilidade legada
+- Rotas `/api/*` permanecem funcionais para o frontend atual.
+- Headers de deprecacao foram adicionados para migracao gradual para `/api/v1`.
+
+### API versionada (`/api/v1`)
+- `GET /api/v1/health`
+- `POST /api/v1/auth/login`
+- `GET /api/v1/auth/me`
+- `GET /api/v1/users`
+- `POST /api/v1/users`
+- `POST /api/v1/users/bulk`
+- `GET /api/v1/users/:id`
+- `PUT /api/v1/users/:id`
+- `DELETE /api/v1/users/:id`
+- `POST /api/v1/users/:id/restore`
+- `GET /api/v1/stats`
+- `GET /api/v1/audit-logs`
+- `GET /api/v1/metrics`
+- `GET /api/v1/openapi.json`
+
+## Novas Features de Backend Implementadas
+
+1. **Autenticacao + RBAC**
+- Impacto: protege operacoes criticas e prepara ambiente para producao.
+
+2. **Soft delete e restore**
+- Impacto: preserva historico, reduz risco de perda irreversivel.
+
+3. **Bulk create de usuarios (admin)**
+- Impacto: aumenta throughput operacional para cadastros em lote.
+
+4. **Auditoria de eventos**
+- Impacto: rastreabilidade para governanca e suporte.
+
+5. **Metricas de API**
+- Impacto: visibilidade de saude operacional e base para observabilidade.
+
+## Setup e Execucao
 
 ### Pre-requisitos
 - Node.js `>= 18`
@@ -122,13 +137,21 @@ cd fake-api-js-async
 npm install
 ```
 
-### Rodar ambiente local
+### Executar
 ```bash
 npm run start
 ```
-- App: `http://127.0.0.1:3333`
 
-### Modo desenvolvimento
+Servidor:
+- `http://127.0.0.1:3333`
+- OpenAPI: `http://127.0.0.1:3333/api/v1/openapi.json`
+
+Usuarios padrao (ambiente local):
+- `admin / Admin@123`
+- `editor / Editor@123`
+- `viewer / Viewer@123`
+
+### Desenvolvimento
 ```bash
 npm run dev
 ```
@@ -143,48 +166,54 @@ npm test
 ```text
 .
 |-- app.js
+|-- api.js
 |-- server/
 |   `-- create-server.js
 |-- src/
+|   |-- bootstrap/
+|   |   `-- create-app-context.js
 |   |-- config.js
 |   |-- data/
 |   |   `-- seed-users.js
 |   |-- lib/
 |   |   |-- errors.js
 |   |   `-- validators.js
+|   |-- monitoring/
+|   |   |-- metrics-registry.js
+|   |   `-- request-logger.js
+|   |-- security/
+|   |   |-- access-control.js
+|   |   |-- password-service.js
+|   |   |-- rate-limiter.js
+|   |   `-- token-service.js
 |   `-- services/
+|       |-- auth-service.js
+|       |-- audit-service.js
 |       `-- user-service.js
 |-- public/
-|   |-- index.html
-|   |-- styles.css
-|   `-- js/
-|       |-- api-client.js
-|       |-- constants.js
-|       |-- dom.js
-|       |-- feedback.js
-|       |-- main.js
-|       |-- renderers.js
-|       |-- state.js
-|       `-- utils.js
-`-- tests/
-    `-- user-service.test.js
+|-- tests/
+|   |-- api-v1.test.js
+|   |-- auth-service.test.js
+|   `-- user-service.test.js
+`-- README.md
 ```
 
-## Boas Praticas Adotadas
+## Boas Praticas e Padroes Aplicados
 
-- Single responsibility por modulo.
-- Estado previsivel com persistencia controlada.
-- Tratamento de erro consistente e amigavel.
-- Componentizacao sem framework com funcoes reutilizaveis.
-- Sem dependencia externa para UI runtime.
+- SRP e separacao de responsabilidades por modulo.
+- Composicao de dependencias no bootstrap.
+- Fail-fast em validacoes e tratamento de erro previsivel.
+- Contrato de resposta consistente para clientes.
+- Testes unitarios e integracao cobrindo seguranca e regras principais.
 
 ## Melhorias Futuras
 
-- Internacionalizacao (i18n) com fallback de locale.
-- Testes E2E de interface (Playwright).
-- Virtualizacao de listas para bases maiores.
-- PWA com cache offline e install prompt.
-- Dark theme opcional com tokens dedicados.
+- Persistencia em banco (PostgreSQL) com repositorios e migracoes.
+- Refresh tokens + revogacao de sessao.
+- Logs estruturados com correlation id em stack observavel (ELK/OpenSearch).
+- Exportadores Prometheus/OpenTelemetry.
+- Circuit breaker e retry policy para integracoes externas.
+- Pipeline CI/CD com quality gates e SAST.
 
 Autoria: Matheus Siqueira  
 Website: https://www.matheussiqueira.dev/

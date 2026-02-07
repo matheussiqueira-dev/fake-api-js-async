@@ -1,9 +1,28 @@
 const { ValidationError } = require('./errors');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_PATTERN = /^[a-zA-Z0-9._-]{3,40}$/;
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    if (value.toLowerCase() === 'true') {
+      return true;
+    }
+
+    if (value.toLowerCase() === 'false') {
+      return false;
+    }
+  }
+
+  return fallback;
 }
 
 function validateId(value) {
@@ -18,36 +37,57 @@ function validateId(value) {
 
 function validateUserPayload(input, options = {}) {
   const isPartial = options.partial === true;
-  const name = normalizeString(input?.name);
-  const email = normalizeString(input?.email).toLowerCase();
+  const payload = input ?? {};
+  const name = normalizeString(payload.name);
+  const email = normalizeString(payload.email).toLowerCase();
 
-  if (!isPartial || Object.prototype.hasOwnProperty.call(input ?? {}, 'name')) {
+  if (!isPartial || Object.prototype.hasOwnProperty.call(payload, 'name')) {
     if (name.length < 2 || name.length > 80) {
       throw new ValidationError('Name must have between 2 and 80 characters.');
     }
   }
 
-  if (!isPartial || Object.prototype.hasOwnProperty.call(input ?? {}, 'email')) {
+  if (!isPartial || Object.prototype.hasOwnProperty.call(payload, 'email')) {
     if (!EMAIL_PATTERN.test(email)) {
       throw new ValidationError('Email format is invalid.');
     }
   }
 
   const result = {};
-  if (!isPartial || Object.prototype.hasOwnProperty.call(input ?? {}, 'name')) {
+  if (!isPartial || Object.prototype.hasOwnProperty.call(payload, 'name')) {
     result.name = name;
   }
-  if (!isPartial || Object.prototype.hasOwnProperty.call(input ?? {}, 'email')) {
+
+  if (!isPartial || Object.prototype.hasOwnProperty.call(payload, 'email')) {
     result.email = email;
   }
 
   return result;
 }
 
+function validateBulkUserPayload(input) {
+  if (!Array.isArray(input) || input.length === 0) {
+    throw new ValidationError('Bulk input must be a non-empty array of users.');
+  }
+
+  if (input.length > 500) {
+    throw new ValidationError('Bulk input supports up to 500 users per request.');
+  }
+
+  return input.map((item, index) => {
+    try {
+      return validateUserPayload(item);
+    } catch (error) {
+      throw new ValidationError(`Invalid user at position ${index + 1}: ${error.message}`);
+    }
+  });
+}
+
 function validateListQuery(query, defaults) {
   const search = normalizeString(query?.search);
   const sortBy = normalizeString(query?.sortBy) || 'name';
   const sortOrder = normalizeString(query?.sortOrder).toLowerCase() === 'desc' ? 'desc' : 'asc';
+  const includeDeleted = normalizeBoolean(query?.includeDeleted, false);
 
   const page = Number.parseInt(String(query?.page ?? defaults.page), 10);
   const limit = Number.parseInt(String(query?.limit ?? defaults.limit), 10);
@@ -57,7 +97,7 @@ function validateListQuery(query, defaults) {
     ? Math.min(limit, defaults.maxLimit)
     : defaults.limit;
 
-  const allowedSortBy = new Set(['id', 'name', 'email', 'createdAt']);
+  const allowedSortBy = new Set(['id', 'name', 'email', 'createdAt', 'updatedAt', 'deletedAt']);
   const safeSortBy = allowedSortBy.has(sortBy) ? sortBy : 'name';
 
   return {
@@ -65,12 +105,34 @@ function validateListQuery(query, defaults) {
     sortBy: safeSortBy,
     sortOrder,
     page: safePage,
-    limit: safeLimit
+    limit: safeLimit,
+    includeDeleted
+  };
+}
+
+function validateLoginPayload(input) {
+  const username = normalizeString(input?.username);
+  const password = typeof input?.password === 'string' ? input.password : '';
+
+  if (!USERNAME_PATTERN.test(username)) {
+    throw new ValidationError('Username must contain 3-40 characters [a-zA-Z0-9._-].');
+  }
+
+  if (password.length < 8 || password.length > 128) {
+    throw new ValidationError('Password must contain 8-128 characters.');
+  }
+
+  return {
+    username,
+    password
   };
 }
 
 module.exports = {
   validateId,
   validateUserPayload,
-  validateListQuery
+  validateBulkUserPayload,
+  validateListQuery,
+  validateLoginPayload,
+  normalizeBoolean
 };

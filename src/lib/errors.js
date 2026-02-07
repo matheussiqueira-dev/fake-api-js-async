@@ -36,9 +36,39 @@ class ConflictError extends AppError {
   }
 }
 
+class UnauthorizedError extends AppError {
+  constructor(message = 'Authentication required.') {
+    super(message, {
+      statusCode: 401,
+      code: 'UNAUTHORIZED'
+    });
+  }
+}
+
+class ForbiddenError extends AppError {
+  constructor(message = 'Permission denied.') {
+    super(message, {
+      statusCode: 403,
+      code: 'FORBIDDEN'
+    });
+  }
+}
+
+class TooManyRequestsError extends AppError {
+  constructor(message = 'Too many requests.') {
+    super(message, {
+      statusCode: 429,
+      code: 'TOO_MANY_REQUESTS'
+    });
+  }
+}
+
 module.exports = {
   AppError,
   ValidationError,
   NotFoundError,
-  ConflictError
+  ConflictError,
+  UnauthorizedError,
+  ForbiddenError,
+  TooManyRequestsError
 };

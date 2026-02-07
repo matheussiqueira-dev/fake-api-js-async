@@ -33,10 +33,15 @@ export const DEFAULT_AUDIT_META = Object.freeze({
 });
 
 export const DEFAULT_PREFERENCES = Object.freeze({
-  density: 'comfortable'
+  density: 'comfortable',
+  focusMode: false,
+  autoRefreshEnabled: false,
+  autoRefreshIntervalSec: 30
 });
 
 export const DEFAULT_ACTIVE_VIEW = 'operations';
+
+export const AUTO_REFRESH_INTERVALS = Object.freeze([15, 30, 60, 120]);
 
 export const ROLE_PERMISSIONS = Object.freeze({
   viewer: Object.freeze({

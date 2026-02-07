@@ -45,6 +45,8 @@
         <ul>
           <li><kbd>Ctrl</kbd> + <kbd>K</kbd> Buscar usuarios</li>
           <li><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd> Atualizar dados</li>
+          <li><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> Alternar focus mode</li>
+          <li><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd> Autoatualizacao</li>
         </ul>
       </section>
     </aside>
@@ -59,10 +61,34 @@
 
         <div class="workspace__actions">
           <button id="densityToggleBtn" class="button button--ghost" type="button">Modo compacto</button>
+          <button id="focusModeBtn" class="button button--ghost" type="button" aria-pressed="false">Focus mode</button>
           <button id="refreshBtn" class="button" type="button">Atualizar</button>
           <div id="healthStatus" class="status-pill" role="status" aria-live="polite">Conectando...</div>
         </div>
       </header>
+
+      <section class="workspace-toolbar" aria-label="Controles de painel">
+        <div class="toolbar-group">
+          <label class="switch" for="autoRefreshInput">
+            <input id="autoRefreshInput" type="checkbox" role="switch" />
+            <span class="switch__track" aria-hidden="true"></span>
+            <span class="switch__label">Autoatualizacao</span>
+          </label>
+
+          <label class="field field--inline field--compact">
+            <span>Intervalo</span>
+            <select id="autoRefreshIntervalSelect">
+              <option value="15">15s</option>
+              <option value="30">30s</option>
+              <option value="60">60s</option>
+              <option value="120">120s</option>
+            </select>
+          </label>
+
+          <p id="refreshCountdownLabel" class="toolbar-note">Autoatualizacao desativada.</p>
+        </div>
+        <p id="lastSyncLabel" class="toolbar-note toolbar-note--strong">Ultima sincronizacao: -</p>
+      </section>
 
       <section id="authGate" class="auth-gate" aria-labelledby="loginHeading">
         <div class="auth-gate__panel">
@@ -260,7 +286,14 @@
             <section class="card card--main" aria-labelledby="auditHeading">
               <div class="card__header">
                 <h3 id="auditHeading">Trilha de auditoria</h3>
-                <button id="refreshAuditBtn" class="button button--ghost" type="button">Atualizar auditoria</button>
+                <div class="card__header-actions card__header-actions--wide">
+                  <label class="field field--compact">
+                    <span class="sr-only">Filtrar eventos de auditoria</span>
+                    <input id="auditSearchInput" type="search" placeholder="Filtrar eventos nesta pagina" autocomplete="off" />
+                  </label>
+                  <button id="clearAuditSearchBtn" class="button button--ghost" type="button">Limpar filtro</button>
+                  <button id="refreshAuditBtn" class="button button--ghost" type="button">Atualizar auditoria</button>
+                </div>
               </div>
 
               <p id="auditFeedback" class="feedback" role="status" aria-live="polite"></p>

@@ -1,24 +1,47 @@
 import { createActionButton, createEmptyState, createSkeleton } from './dom.js';
-import { describeRole, formatDate } from './utils.js';
+import { describeRole, formatDate, formatTime } from './utils.js';
 
 export function applyDensity(elements, density) {
   elements.body.dataset.density = density;
   elements.densityToggleBtn.textContent = density === 'compact' ? 'Modo confortavel' : 'Modo compacto';
+  elements.densityToggleBtn.setAttribute('aria-pressed', density === 'compact' ? 'true' : 'false');
+}
+
+export function applyLayoutMode(elements, focusModeEnabled) {
+  elements.body.dataset.layout = focusModeEnabled ? 'focus' : 'default';
+  elements.focusModeBtn.textContent = focusModeEnabled ? 'Layout padrao' : 'Focus mode';
+  elements.focusModeBtn.setAttribute('aria-pressed', focusModeEnabled ? 'true' : 'false');
+}
+
+export function syncAutoRefreshControls(elements, preferences) {
+  elements.autoRefreshInput.checked = preferences.autoRefreshEnabled === true;
+  elements.autoRefreshIntervalSelect.value = String(preferences.autoRefreshIntervalSec);
+}
+
+export function setRefreshCountdownLabel(elements, message) {
+  elements.refreshCountdownLabel.textContent = message;
+}
+
+export function setLastSync(elements, value) {
+  if (!value) {
+    elements.lastSyncLabel.textContent = 'Ultima sincronizacao: -';
+    return;
+  }
+
+  elements.lastSyncLabel.textContent = `Ultima sincronizacao: ${formatTime(value)}`;
 }
 
 export function setHealthStatus(elements, isOnline) {
+  elements.healthStatus.classList.remove('status-pill--online', 'status-pill--offline');
+
   if (isOnline) {
     elements.healthStatus.textContent = 'Servico online';
-    elements.healthStatus.style.background = '#ecfdf5';
-    elements.healthStatus.style.color = '#0d9a63';
-    elements.healthStatus.style.borderColor = 'rgba(13,154,99,0.28)';
+    elements.healthStatus.classList.add('status-pill--online');
     return;
   }
 
   elements.healthStatus.textContent = 'Servico indisponivel';
-  elements.healthStatus.style.background = '#fef2f2';
-  elements.healthStatus.style.color = '#b42318';
-  elements.healthStatus.style.borderColor = 'rgba(180,35,24,0.28)';
+  elements.healthStatus.classList.add('status-pill--offline');
 }
 
 export function setAuthState(elements, isAuthenticated) {
@@ -315,20 +338,33 @@ export function renderMetrics(elements, metrics, canReadMetrics) {
   elements.metricsList.replaceChildren(...metricItems);
 }
 
-export function renderAuditLogs(elements, logs) {
-  if (!logs.length) {
+export function renderAuditLogs(elements, logs, searchTerm = '') {
+  const normalizedTerm = searchTerm.trim().toLowerCase();
+  const filteredLogs = normalizedTerm
+    ? logs.filter((log) => {
+      const metadataText = log.metadata ? JSON.stringify(log.metadata) : '';
+      const raw = `${log.action} ${log.actor} ${log.status} ${metadataText}`.toLowerCase();
+      return raw.includes(normalizedTerm);
+    })
+    : logs;
+
+  if (!filteredLogs.length) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
     cell.colSpan = 5;
-    cell.appendChild(createEmptyState('Sem eventos de auditoria', 'Os eventos aparecerao apos operacoes autenticadas.'));
+    const title = normalizedTerm ? 'Nenhum evento encontrado no filtro local' : 'Sem eventos de auditoria';
+    const description = normalizedTerm
+      ? 'Ajuste o texto de busca para ampliar os resultados.'
+      : 'Os eventos aparecerao apos operacoes autenticadas.';
+    cell.appendChild(createEmptyState(title, description));
     row.appendChild(cell);
     elements.auditTableBody.replaceChildren(row);
-    return;
+    return 0;
   }
 
   const fragment = document.createDocumentFragment();
 
-  logs.forEach((log) => {
+  filteredLogs.forEach((log) => {
     const row = document.createElement('tr');
 
     const createdAtCell = document.createElement('td');
@@ -355,6 +391,7 @@ export function renderAuditLogs(elements, logs) {
   });
 
   elements.auditTableBody.replaceChildren(fragment);
+  return filteredLogs.length;
 }
 
 export function renderAuditPagination(elements, meta) {
@@ -377,6 +414,8 @@ export function applyRoleCapabilities(elements, permissions, role) {
   }
 
   elements.refreshAuditBtn.disabled = !permissions.canReadAudit;
+  elements.auditSearchInput.disabled = !permissions.canReadAudit;
+  elements.clearAuditSearchBtn.disabled = !permissions.canReadAudit;
 }
 
 export function setFormMode(elements, mode) {

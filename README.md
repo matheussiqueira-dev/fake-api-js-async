@@ -15,6 +15,20 @@ Valor entregue:
 - Governanca para administracao
 - Base tecnica preparada para evolucao para persistencia externa
 
+## Frontend Experience (UX/UI)
+
+O projeto inclui um painel web moderno em `public/` com foco em operacao real:
+- Auth gate com contexto de sessao e RBAC refletido na interface.
+- Workspace com KPI cards, filtros, tabela/cartoes responsivos e acoes contextuais.
+- Trilha de auditoria com filtro local por evento.
+- Focus mode para reduzir distracao operacional.
+- Autoatualizacao configuravel (15/30/60/120s) com contador e ultima sincronizacao.
+- Atalhos de produtividade:
+  - `Ctrl+K`: foco na busca de usuarios
+  - `Ctrl+Shift+R`: atualizacao imediata
+  - `Ctrl+Shift+F`: alternar focus mode
+  - `Ctrl+Shift+A`: alternar autoatualizacao
+
 ## Arquitetura Adotada
 
 Estilo arquitetural: **modular monolith** (camadas explicitas, baixo acoplamento, alta testabilidade).
@@ -102,6 +116,15 @@ Observabilidade:
 
 5. Rate limit especifico de login
 - Impacto: camada adicional de protecao sem penalizar leitura normal da API.
+
+6. Focus mode no frontend
+- Impacto: melhora concentracao em fluxos de operacao de alta repeticao.
+
+7. Autoatualizacao configuravel
+- Impacto: reduz operacao manual e melhora monitoramento continuo.
+
+8. Filtro local na auditoria
+- Impacto: acelera investigacao de eventos sem necessidade de nova requisicao.
 
 ## Tecnologias Utilizadas
 

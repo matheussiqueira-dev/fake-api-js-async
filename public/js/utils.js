@@ -40,6 +40,12 @@ export function normalizeDensity(value) {
   return value === 'compact' ? 'compact' : 'comfortable';
 }
 
+export function normalizeAutoRefreshInterval(value) {
+  const allowed = new Set([15, 30, 60, 120]);
+  const normalized = clampPositiveInt(value, 30);
+  return allowed.has(normalized) ? normalized : 30;
+}
+
 export function normalizeSortBy(value) {
   const allowed = new Set(['id', 'name', 'email', 'createdAt', 'updatedAt']);
   return allowed.has(value) ? value : 'name';
@@ -110,4 +116,17 @@ export function describeRole(role) {
   }
 
   return 'Leitor';
+}
+
+export function formatTime(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  }).format(date);
 }

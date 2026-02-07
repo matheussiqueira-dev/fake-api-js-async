@@ -1,124 +1,86 @@
-# UX/UI Design Report - Control Center
+# UX/UI Senior Report - Control Center
 
-## 1. Analise de Contexto
+## 1. Contexto do produto
 
-### Proposito do produto
-Plataforma SaaS interna para operacao de cadastros de usuarios com foco em produtividade, seguranca e governanca.
+### Proposito
+Aplicacao web para operacao de cadastros com autenticacao, trilha de auditoria e observabilidade.
 
 ### Publico-alvo
-- Time operacional (cadastro e atualizacao)
-- Lideranca/administracao (auditoria, metricas e controle)
+- Operacao: times que criam, editam e consultam usuarios.
+- Governanca: perfis administrativos que acompanham auditoria e metricas.
 
-### Objetivos de negocio
-- Reduzir tempo de operacao por tarefa
-- Diminuir erros de cadastro
-- Aumentar rastreabilidade e confianca operacional
+### Objetivo de negocio
+- Reduzir tempo de operacao por tarefa.
+- Diminuir erro operacional.
+- Aumentar confianca, rastreabilidade e previsibilidade do fluxo.
 
-### Problemas identificados anteriormente
-- Fluxo unico sem gate de autenticacao na experiencia visual.
-- Ausencia de separacao clara entre operacao e auditoria.
-- Falta de feedback contextual sobre papel/permissoes.
-- Baixa percepcao de governanca para cenarios de compliance.
+## 2. Diagnostico UX realizado
 
-## 2. UX - Decisoes de Experiencia
+Principais pontos de melhoria identificados na rodada:
+- Falta de modo de concentracao para tarefas longas (sidebar sempre visivel).
+- Atualizacao de dados apenas manual, sem suporte para monitoramento continuo.
+- Trilha de auditoria com leitura ampla, mas sem filtro local rapido.
+- Estado de sincronizacao sem indicador temporal explicito.
 
-### Jornada simplificada
-1. Login explicito com credenciais de ambiente local.
-2. Entrada no dashboard com contexto de sessao (usuario e papel).
-3. Navegacao por tarefas: `Operacao` e `Auditoria`.
-4. Acao contextual por permissao (criar, editar, remover, restaurar).
-5. Feedback imediato via status, toasts e estados de carregamento.
+## 3. Melhorias implementadas (UX + UI)
 
-### Melhorias de previsibilidade
-- Mensagens de permissao no formulario por papel (`viewer/editor/admin`).
-- Confirmacao explicita para acoes destrutivas e restauracao.
-- Estados de interface sincronizados com RBAC do backend.
+### 3.1 Focus mode
+- Novo controle `Focus mode` no header.
+- Novo atalho `Ctrl+Shift+F`.
+- Remove distracao visual ao ocultar a sidebar e priorizar a area de operacao.
+- Persistencia em preferencias locais.
 
-### Microinteracoes
-- Atalhos (`Ctrl+K`, `Ctrl+Shift+R`)
-- Skeleton loading em tabelas
-- Toasts de sucesso/erro/info
+### 3.2 Autoatualizacao do painel
+- Toggle de autoatualizacao com intervalos de `15s`, `30s`, `60s`, `120s`.
+- Contador de proxima atualizacao em tempo real.
+- Indicador de ultima sincronizacao (timestamp no header).
+- Controle de concorrencia para evitar refresh simultaneo.
+- Atalho `Ctrl+Shift+A`.
 
-## 3. UI - Decisoes Visuais
+### 3.3 Filtro local de auditoria
+- Busca local na tabela de auditoria (acao, ator, status e metadata).
+- Botao de limpeza de filtro.
+- Feedback contextual com quantidade exibida para o termo digitado.
 
-### Direcao visual
-- Interface "control center" com sidebar de contexto + workspace principal.
-- Identidade cromatica em azul profundo com acento laranja para contraste e energia.
-- Tipografia `Outfit` (heading) e `Plus Jakarta Sans` (texto) para leitura e personalidade.
+### 3.4 Design system e consistencia visual
+- Estados semanticos de saude (`online`/`offline`) migrados para classes CSS.
+- Novo bloco `workspace-toolbar` para padrao de controles globais.
+- Componente `switch` com estados consistentes e foco visivel.
+- Ajustes responsivos para toolbar e header-actions em tablet/mobile.
 
-### Hierarquia visual
-- Camada 1: header de contexto e estado do sistema.
-- Camada 2: cards de KPI (volume, ativos/removidos, latencia).
-- Camada 3: area de execucao principal (filtros + tabela + formulario).
+## 4. Acessibilidade aplicada
 
-## 4. Design System Evoluido
+- Controle de switch com `role="switch"`.
+- Estados de toggle com `aria-pressed` em botoes de modo.
+- Feedback de status em regioes com `aria-live`.
+- Foco visivel padronizado para controles novos.
+- Continuidade de skip-link, dialog semantico e estados `aria-busy`.
 
-### Tokens principais (CSS variables)
-- Cores semanticas (`--color-brand`, `--color-success`, `--color-danger`)
-- Tipografia (`--font-body`, `--font-heading`)
-- Espacamentos (`--space-*`)
-- Eletrificacao visual (`--shadow-*`, `--radius-*`)
+## 5. Impacto tecnico
 
-### Componentes reutilizaveis
-- `button` (default, ghost, danger, block)
-- `card`
-- `badge` de status
-- `stack-list`
-- `toast`
-- `table-shell` + `loading-skeleton`
-
-### Estados padronizados
-- Hover/focus/disabled
-- Feedback success/error/info
-- Status de usuario (ativo/removido)
-
-## 5. Acessibilidade
-
-Implementacoes aplicadas:
-- Skip link para navegacao por teclado.
-- Regioes com `aria-live` para feedback.
-- `aria-busy` durante carregamento de dados.
-- Foco visivel consistente com ring semantico.
-- Labels e mensagens de erro associadas a campos.
-- Dialog semantico para confirmacao de acoes.
-
-## 6. Responsividade e Adaptacao
-
-### Desktop
-- Sidebar fixa contextual + workspace dividido por funcao.
-
-### Tablet
-- Sidebar horizontalizada em cards compactos.
-- Reorganizacao para uma coluna de conteudo principal.
-
-### Mobile
-- Tabela vira cards.
-- Filtros empilhados.
-- Dialog/actions adaptados para toque.
-
-## 7. Racional tecnico para implementacao
-
-### Arquivos principais alterados
+Arquivos alterados:
 - `public/index.html`
 - `public/styles.css`
 - `public/js/main.js`
 - `public/js/renderers.js`
-- `public/js/api-client.js`
-- `public/js/state.js`
-- `public/js/constants.js`
 - `public/js/dom.js`
+- `public/js/state.js`
 - `public/js/utils.js`
-- `public/js/feedback.js`
+- `public/js/constants.js`
 
-### Beneficios para engenharia
-- Melhor separacao de responsabilidades entre estado, API, render e eventos.
-- Escalabilidade para novas telas/fluxos sem reescrever arquitetura.
-- Comportamento de permissao centralizado e previsivel.
-- Menor risco de regressao visual por padronizacao de componentes.
+Beneficios:
+- UX mais previsivel em operacao continua.
+- Melhor suporte a contexto de monitoramento.
+- Arquitetura frontend mais coesa para evolucoes futuras.
+- Melhor separacao entre estado, renderizacao e preferencias persistidas.
 
-## 8. Evolucoes recomendadas
+## 6. Validacao executada
 
-- Testes E2E de acessibilidade (axe + Playwright).
-- Tema escuro com tokens semanticamente equivalentes.
-- Instrumentacao de analytics UX (tempo por tarefa, abandono de fluxo).
-- Biblioteca de componentes documentada (Storybook).
+- Testes automatizados backend/frontend integration existentes: `npm test` (todos verdes).
+- Smoke test de runtime: servidor iniciado e resposta `200` no frontend.
+
+## 7. Proximos passos recomendados
+
+- Telemetria de UX por tarefa (tempo ate conclusao, taxa de abandono por acao).
+- Testes E2E de acessibilidade com axe/playwright.
+- Biblioteca de componentes documentada (Storybook) com tokens e estados.

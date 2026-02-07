@@ -17,6 +17,7 @@ import { getElements } from './dom.js';
 import { getErrorMessage, showToast } from './feedback.js';
 import {
   applyDensity,
+  applyLayoutMode,
   applyRoleCapabilities,
   clearFieldErrors,
   clearLoginErrors,
@@ -35,12 +36,22 @@ import {
   setFieldError,
   setFormMode,
   setHealthStatus,
+  setLastSync,
   setLoginFieldError,
+  setRefreshCountdownLabel,
   setUsersLoading,
+  syncAutoRefreshControls,
   syncFilterControls
 } from './renderers.js';
 import { createState, resetQuery } from './state.js';
-import { debounce, downloadCsv, getPermissionsForRole, normalizeDensity, toCsv } from './utils.js';
+import {
+  debounce,
+  downloadCsv,
+  getPermissionsForRole,
+  normalizeAutoRefreshInterval,
+  normalizeDensity,
+  toCsv
+} from './utils.js';
 
 const elements = getElements();
 const {
@@ -51,6 +62,9 @@ const {
   persistQuery,
   persistSession
 } = createState();
+let autoRefreshTimerId = null;
+let autoRefreshCountdownTimerId = null;
+let nextAutoRefreshAt = null;
 
 init().catch((error) => {
   showToast(elements.toastRegion, getErrorMessage(error), 'error');
@@ -58,6 +72,10 @@ init().catch((error) => {
 
 async function init() {
   applyDensity(elements, state.preferences.density);
+  applyLayoutMode(elements, state.preferences.focusMode);
+  syncAutoRefreshControls(elements, state.preferences);
+  setLastSync(elements, state.lastSyncAt);
+  updateAutoRefreshCountdownLabel();
   setActiveView(elements, state.activeView);
   bindEvents();
 
@@ -67,6 +85,7 @@ async function init() {
     await restoreSession();
   } else {
     setAuthState(elements, false);
+    configureAutoRefresh();
   }
 }
 
@@ -74,13 +93,34 @@ function bindEvents() {
   elements.loginForm.addEventListener('submit', handleLogin);
   elements.logoutBtn.addEventListener('click', handleLogout);
 
-  elements.refreshBtn.addEventListener('click', refreshAllData);
+  elements.refreshBtn.addEventListener('click', () => {
+    refreshAllData({ reason: 'manual' });
+  });
 
   elements.densityToggleBtn.addEventListener('click', () => {
     state.preferences.density = state.preferences.density === 'compact' ? 'comfortable' : 'compact';
     state.preferences.density = normalizeDensity(state.preferences.density);
     applyDensity(elements, state.preferences.density);
     persistPreferences();
+  });
+
+  elements.focusModeBtn.addEventListener('click', () => {
+    state.preferences.focusMode = state.preferences.focusMode !== true;
+    applyLayoutMode(elements, state.preferences.focusMode);
+    persistPreferences();
+  });
+
+  elements.autoRefreshInput.addEventListener('change', () => {
+    state.preferences.autoRefreshEnabled = elements.autoRefreshInput.checked;
+    persistPreferences();
+    configureAutoRefresh();
+  });
+
+  elements.autoRefreshIntervalSelect.addEventListener('change', () => {
+    state.preferences.autoRefreshIntervalSec = normalizeAutoRefreshInterval(elements.autoRefreshIntervalSelect.value);
+    syncAutoRefreshControls(elements, state.preferences);
+    persistPreferences();
+    configureAutoRefresh();
   });
 
   elements.navButtons.forEach((button) => {
@@ -170,6 +210,15 @@ function bindEvents() {
   });
 
   elements.refreshAuditBtn.addEventListener('click', loadAuditLogs);
+  elements.auditSearchInput.addEventListener('input', () => {
+    state.auditSearchTerm = elements.auditSearchInput.value.trim();
+    applyAuditLocalFilter();
+  });
+  elements.clearAuditSearchBtn.addEventListener('click', () => {
+    state.auditSearchTerm = '';
+    elements.auditSearchInput.value = '';
+    applyAuditLocalFilter();
+  });
 
   elements.prevAuditBtn.addEventListener('click', () => {
     if (!state.auditMeta.hasPreviousPage) {
@@ -204,7 +253,22 @@ function bindEvents() {
 
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'r') {
       event.preventDefault();
-      await refreshAllData();
+      await refreshAllData({ reason: 'shortcut' });
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+      event.preventDefault();
+      state.preferences.focusMode = state.preferences.focusMode !== true;
+      applyLayoutMode(elements, state.preferences.focusMode);
+      persistPreferences();
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'a') {
+      event.preventDefault();
+      state.preferences.autoRefreshEnabled = state.preferences.autoRefreshEnabled !== true;
+      syncAutoRefreshControls(elements, state.preferences);
+      persistPreferences();
+      configureAutoRefresh();
     }
   });
 }
@@ -225,12 +289,14 @@ async function restoreSession() {
     applyPermissionsToUI();
     syncFilterControls(elements, state.query, state.includeDeleted);
 
-    await refreshAllData();
+    await refreshAllData({ reason: 'session-restore' });
+    configureAutoRefresh();
   } catch {
     state.session = null;
     persistSession();
     setAuthState(elements, false);
     renderSession(elements, null);
+    configureAutoRefresh();
   }
 }
 
@@ -279,7 +345,8 @@ async function handleLogin(event) {
 
     showToast(elements.toastRegion, `Bem-vindo, ${result.user.displayName}.`, 'success');
 
-    await refreshAllData();
+    await refreshAllData({ reason: 'login' });
+    configureAutoRefresh();
   } catch (error) {
     showToast(elements.toastRegion, getErrorMessage(error), 'error');
   } finally {
@@ -299,6 +366,12 @@ function handleLogout() {
   setAuthState(elements, false);
   renderSession(elements, null);
   resetFormMode();
+  clearAutoRefreshTimers();
+  state.lastSyncAt = null;
+  setLastSync(elements, state.lastSyncAt);
+  configureAutoRefresh();
+  state.auditSearchTerm = '';
+  elements.auditSearchInput.value = '';
 
   elements.loginForm.reset();
   showToast(elements.toastRegion, 'Sessao encerrada com sucesso.', 'info');
@@ -313,17 +386,40 @@ async function loadHealth() {
   }
 }
 
-async function refreshAllData() {
+async function refreshAllData(options = {}) {
   if (!state.session?.token) {
     return;
   }
 
-  await Promise.all([
-    loadUsers({ showLoading: true }),
-    loadStats(),
-    loadMetrics(),
-    state.activeView === 'audit' ? loadAuditLogs() : Promise.resolve()
-  ]);
+  if (state.isRefreshingAllData) {
+    return;
+  }
+
+  state.isRefreshingAllData = true;
+  elements.refreshBtn.disabled = true;
+
+  try {
+    await Promise.all([
+      loadUsers({ showLoading: true }),
+      loadStats(),
+      loadMetrics(),
+      state.activeView === 'audit' ? loadAuditLogs() : Promise.resolve()
+    ]);
+
+    state.lastSyncAt = new Date().toISOString();
+    setLastSync(elements, state.lastSyncAt);
+  } finally {
+    state.isRefreshingAllData = false;
+    elements.refreshBtn.disabled = false;
+
+    if (state.preferences.autoRefreshEnabled && state.session?.token) {
+      const intervalMs = state.preferences.autoRefreshIntervalSec * 1000;
+      nextAutoRefreshAt = Date.now() + intervalMs;
+      if (options.reason !== 'auto') {
+        updateAutoRefreshCountdownLabel();
+      }
+    }
+  }
 }
 
 async function loadUsers(options = {}) {
@@ -448,7 +544,7 @@ async function loadAuditLogs() {
 
   if (!permissions.canReadAudit) {
     setAuditFeedback(elements, 'Acesso restrito ao perfil administrador.');
-    renderAuditLogs(elements, []);
+    state.auditFilteredCount = renderAuditLogs(elements, [], state.auditSearchTerm);
     renderAuditPagination(elements, {
       page: 1,
       totalPages: 1,
@@ -470,21 +566,97 @@ async function loadAuditLogs() {
     state.auditLogs = result.data;
     state.auditMeta = result.meta;
 
-    renderAuditLogs(elements, state.auditLogs);
+    state.auditFilteredCount = renderAuditLogs(elements, state.auditLogs, state.auditSearchTerm);
     renderAuditPagination(elements, state.auditMeta);
-    setAuditFeedback(elements, `${state.auditMeta.totalItems} evento(s) encontrados.`);
+    updateAuditFeedback();
   } catch (error) {
     if (error.statusCode === 401) {
       handleSessionExpired();
       return;
     }
 
-    renderAuditLogs(elements, []);
+    state.auditFilteredCount = renderAuditLogs(elements, [], state.auditSearchTerm);
     setAuditFeedback(elements, 'Falha ao carregar auditoria.');
     showToast(elements.toastRegion, getErrorMessage(error), 'error');
   } finally {
     elements.auditRegion.setAttribute('aria-busy', 'false');
   }
+}
+
+function applyAuditLocalFilter() {
+  state.auditFilteredCount = renderAuditLogs(elements, state.auditLogs, state.auditSearchTerm);
+  updateAuditFeedback();
+}
+
+function updateAuditFeedback() {
+  if (!state.auditSearchTerm) {
+    setAuditFeedback(elements, `${state.auditMeta.totalItems} evento(s) encontrados.`);
+    return;
+  }
+
+  setAuditFeedback(
+    elements,
+    `Exibindo ${state.auditFilteredCount} evento(s) na pagina atual para o filtro "${state.auditSearchTerm}".`
+  );
+}
+
+function clearAutoRefreshTimers() {
+  if (autoRefreshTimerId) {
+    window.clearInterval(autoRefreshTimerId);
+    autoRefreshTimerId = null;
+  }
+
+  if (autoRefreshCountdownTimerId) {
+    window.clearInterval(autoRefreshCountdownTimerId);
+    autoRefreshCountdownTimerId = null;
+  }
+
+  nextAutoRefreshAt = null;
+}
+
+function updateAutoRefreshCountdownLabel() {
+  if (!state.preferences.autoRefreshEnabled) {
+    setRefreshCountdownLabel(elements, 'Autoatualizacao desativada.');
+    return;
+  }
+
+  if (!state.session?.token) {
+    setRefreshCountdownLabel(elements, 'Autoatualizacao aguardando login.');
+    return;
+  }
+
+  if (!nextAutoRefreshAt) {
+    setRefreshCountdownLabel(elements, `Proxima atualizacao em ${state.preferences.autoRefreshIntervalSec}s.`);
+    return;
+  }
+
+  const remainingMs = Math.max(0, nextAutoRefreshAt - Date.now());
+  const remainingSec = Math.ceil(remainingMs / 1000);
+  setRefreshCountdownLabel(elements, `Proxima atualizacao em ${remainingSec}s.`);
+}
+
+function configureAutoRefresh() {
+  state.preferences.autoRefreshIntervalSec = normalizeAutoRefreshInterval(state.preferences.autoRefreshIntervalSec);
+  syncAutoRefreshControls(elements, state.preferences);
+  clearAutoRefreshTimers();
+
+  if (!state.preferences.autoRefreshEnabled || !state.session?.token) {
+    updateAutoRefreshCountdownLabel();
+    return;
+  }
+
+  const intervalMs = state.preferences.autoRefreshIntervalSec * 1000;
+  nextAutoRefreshAt = Date.now() + intervalMs;
+  updateAutoRefreshCountdownLabel();
+
+  autoRefreshTimerId = window.setInterval(async () => {
+    await refreshAllData({ reason: 'auto' });
+    nextAutoRefreshAt = Date.now() + intervalMs;
+  }, intervalMs);
+
+  autoRefreshCountdownTimerId = window.setInterval(() => {
+    updateAutoRefreshCountdownLabel();
+  }, 1000);
 }
 
 function handleUserActionClick(event) {
@@ -758,6 +930,11 @@ function applyPermissionsToUI() {
     auditNavButton.title = permissions.canReadAudit ? '' : 'Disponivel apenas para administradores';
   }
 
+  if (!permissions.canReadAudit) {
+    state.auditSearchTerm = '';
+    elements.auditSearchInput.value = '';
+  }
+
   if (!permissions.canToggleDeleted) {
     state.includeDeleted = false;
     elements.includeDeletedInput.checked = false;
@@ -775,5 +952,11 @@ function handleSessionExpired() {
   setAuthState(elements, false);
   renderSession(elements, null);
   resetFormMode();
+  clearAutoRefreshTimers();
+  state.lastSyncAt = null;
+  setLastSync(elements, state.lastSyncAt);
+  configureAutoRefresh();
+  state.auditSearchTerm = '';
+  elements.auditSearchInput.value = '';
   showToast(elements.toastRegion, 'Sua sessao expirou. Entre novamente.', 'error');
 }

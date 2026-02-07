@@ -8,6 +8,7 @@ import {
 } from './constants.js';
 import { loadJsonFromStorage, saveJsonToStorage } from './storage.js';
 import {
+  normalizeAutoRefreshInterval,
   normalizeDensity,
   normalizeLimit,
   normalizeSortBy,
@@ -27,7 +28,10 @@ function sanitizeQuery(query = {}) {
 
 function sanitizePreferences(preferences = {}) {
   return {
-    density: normalizeDensity(preferences.density)
+    density: normalizeDensity(preferences.density),
+    focusMode: preferences.focusMode === true,
+    autoRefreshEnabled: preferences.autoRefreshEnabled === true,
+    autoRefreshIntervalSec: normalizeAutoRefreshInterval(preferences.autoRefreshIntervalSec)
   };
 }
 
@@ -83,7 +87,11 @@ export function createState() {
     activeView: normalizeView(activeViewRaw),
     editingUserId: null,
     pendingAction: null,
-    inFlightUsersRequest: 0
+    inFlightUsersRequest: 0,
+    isRefreshingAllData: false,
+    lastSyncAt: null,
+    auditSearchTerm: '',
+    auditFilteredCount: 0
   };
 
   return {

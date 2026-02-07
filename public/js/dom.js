@@ -5,6 +5,11 @@ export function getElements() {
     healthStatus: document.getElementById('healthStatus'),
     refreshBtn: document.getElementById('refreshBtn'),
     densityToggleBtn: document.getElementById('densityToggleBtn'),
+    focusModeBtn: document.getElementById('focusModeBtn'),
+    autoRefreshInput: document.getElementById('autoRefreshInput'),
+    autoRefreshIntervalSelect: document.getElementById('autoRefreshIntervalSelect'),
+    refreshCountdownLabel: document.getElementById('refreshCountdownLabel'),
+    lastSyncLabel: document.getElementById('lastSyncLabel'),
 
     navButtons: Array.from(document.querySelectorAll('[data-view-target]')),
     operationsView: document.querySelector('[data-view="operations"]'),
@@ -65,6 +70,8 @@ export function getElements() {
     recentList: document.getElementById('recentList'),
 
     refreshAuditBtn: document.getElementById('refreshAuditBtn'),
+    auditSearchInput: document.getElementById('auditSearchInput'),
+    clearAuditSearchBtn: document.getElementById('clearAuditSearchBtn'),
     auditFeedback: document.getElementById('auditFeedback'),
     auditRegion: document.getElementById('auditRegion'),
     auditTableBody: document.getElementById('auditTableBody'),

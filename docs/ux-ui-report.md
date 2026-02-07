@@ -21,6 +21,8 @@ Principais pontos de melhoria identificados na rodada:
 - Atualizacao de dados apenas manual, sem suporte para monitoramento continuo.
 - Trilha de auditoria com leitura ampla, mas sem filtro local rapido.
 - Estado de sincronizacao sem indicador temporal explicito.
+- Navegacao principal pouco resiliente em layouts compactos.
+- Necessidade de identidade visual mais memoravel e sofisticada.
 
 ## 3. Melhorias implementadas (UX + UI)
 
@@ -43,10 +45,15 @@ Principais pontos de melhoria identificados na rodada:
 - Feedback contextual com quantidade exibida para o termo digitado.
 
 ### 3.4 Design system e consistencia visual
+- Nova linguagem visual (paleta verde profunda + terracota).
+- Tipografia atualizada (`Space Grotesk` + `Work Sans`) para maior personalidade.
+- Background com grid sutil para dar profundidade sem poluir.
+- Navegacao primaria dentro do workspace (`tab-nav`) para cenarios compactos.
+- Context strip com chips de resumo operacional para reforcar estado.
 - Estados semanticos de saude (`online`/`offline`) migrados para classes CSS.
 - Novo bloco `workspace-toolbar` para padrao de controles globais.
 - Componente `switch` com estados consistentes e foco visivel.
-- Ajustes responsivos para toolbar e header-actions em tablet/mobile.
+- Ajustes responsivos para toolbar, tabs e header-actions em tablet/mobile.
 
 ## 4. Acessibilidade aplicada
 
@@ -73,6 +80,7 @@ Beneficios:
 - Melhor suporte a contexto de monitoramento.
 - Arquitetura frontend mais coesa para evolucoes futuras.
 - Melhor separacao entre estado, renderizacao e preferencias persistidas.
+- Identidade visual mais forte e coerente com produto de governanca.
 
 ## 6. Validacao executada
 

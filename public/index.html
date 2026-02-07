@@ -11,7 +11,7 @@
   <title>Control Center | Fake API</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body data-density="comfortable">
@@ -54,7 +54,7 @@
     <main id="mainContent" class="workspace" tabindex="-1">
       <header class="workspace__header">
         <div>
-          <p class="workspace__eyebrow">Operations Console</p>
+          <p class="workspace__eyebrow">Mission Control</p>
           <h2 class="workspace__title">Painel de Cadastros</h2>
           <p class="workspace__description">Fluxo otimizado para administracao de usuarios, compliance e monitoramento operacional.</p>
         </div>
@@ -66,6 +66,26 @@
           <div id="healthStatus" class="status-pill" role="status" aria-live="polite">Conectando...</div>
         </div>
       </header>
+
+      <nav class="tab-nav" aria-label="Navegacao principal do workspace">
+        <button class="tab-nav__item is-active" data-view-target="operations" type="button">Operacao</button>
+        <button class="tab-nav__item" data-view-target="audit" type="button">Auditoria</button>
+      </nav>
+
+      <section class="context-strip" aria-label="Resumo operacional">
+        <div class="context-chip">
+          <p class="context-chip__label">Ambiente</p>
+          <strong>Local</strong>
+        </div>
+        <div class="context-chip">
+          <p class="context-chip__label">Seguranca</p>
+          <strong>RBAC ativo</strong>
+        </div>
+        <div class="context-chip">
+          <p class="context-chip__label">Operacao</p>
+          <strong>Workflow padronizado</strong>
+        </div>
+      </section>
 
       <section class="workspace-toolbar" aria-label="Controles de painel">
         <div class="toolbar-group">

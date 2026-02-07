@@ -2,31 +2,55 @@ import {
   checkHealth,
   createUser,
   fetchAllUsersForExport,
+  fetchAuditLogs,
+  fetchMetrics,
   fetchStats,
   fetchUsers,
+  getCurrentUser,
+  login,
   removeUser,
+  restoreUser,
   updateUser
 } from './api-client.js';
+import { ROLE_PERMISSIONS } from './constants.js';
 import { getElements } from './dom.js';
 import { getErrorMessage, showToast } from './feedback.js';
 import {
   applyDensity,
+  applyRoleCapabilities,
   clearFieldErrors,
+  clearLoginErrors,
+  renderAuditLogs,
+  renderAuditPagination,
+  renderMetrics,
   renderPagination,
+  renderSession,
   renderStats,
   renderUsers,
+  setActiveView,
+  setAuditFeedback,
+  setAuditLoading,
+  setAuthState,
   setFeedback,
   setFieldError,
   setFormMode,
   setHealthStatus,
+  setLoginFieldError,
   setUsersLoading,
   syncFilterControls
 } from './renderers.js';
 import { createState, resetQuery } from './state.js';
-import { debounce, downloadCsv, normalizeDensity, toCsv } from './utils.js';
+import { debounce, downloadCsv, getPermissionsForRole, normalizeDensity, toCsv } from './utils.js';
 
 const elements = getElements();
-const { state, persistPreferences, persistQuery } = createState();
+const {
+  state,
+  persistActiveView,
+  persistIncludeDeleted,
+  persistPreferences,
+  persistQuery,
+  persistSession
+} = createState();
 
 init().catch((error) => {
   showToast(elements.toastRegion, getErrorMessage(error), 'error');
@@ -34,32 +58,58 @@ init().catch((error) => {
 
 async function init() {
   applyDensity(elements, state.preferences.density);
-  syncFilterControls(elements, state.query);
+  setActiveView(elements, state.activeView);
   bindEvents();
 
-  await Promise.all([loadHealth(), loadUsers({ showLoading: true }), loadStats()]);
+  await loadHealth();
+
+  if (state.session?.token) {
+    await restoreSession();
+  } else {
+    setAuthState(elements, false);
+  }
 }
 
 function bindEvents() {
-  elements.refreshBtn.addEventListener('click', async () => {
-    await Promise.all([loadUsers({ showLoading: true }), loadStats()]);
-    showToast(elements.toastRegion, 'Dados atualizados.', 'success');
-  });
+  elements.loginForm.addEventListener('submit', handleLogin);
+  elements.logoutBtn.addEventListener('click', handleLogout);
 
-  elements.clearFiltersBtn.addEventListener('click', () => {
-    resetQuery(state);
-    syncFilterControls(elements, state.query);
-    persistQuery();
-    loadUsers({ showLoading: true });
-    showToast(elements.toastRegion, 'Filtros redefinidos.', 'info');
-  });
+  elements.refreshBtn.addEventListener('click', refreshAllData);
 
   elements.densityToggleBtn.addEventListener('click', () => {
     state.preferences.density = state.preferences.density === 'compact' ? 'comfortable' : 'compact';
     state.preferences.density = normalizeDensity(state.preferences.density);
-
     applyDensity(elements, state.preferences.density);
     persistPreferences();
+  });
+
+  elements.navButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const requested = button.dataset.viewTarget ?? 'operations';
+
+      if (requested === 'audit' && !getCurrentPermissions().canReadAudit) {
+        showToast(elements.toastRegion, 'Acesso de auditoria restrito ao perfil administrador.', 'info');
+        return;
+      }
+
+      state.activeView = requested;
+      persistActiveView();
+      setActiveView(elements, state.activeView);
+
+      if (state.activeView === 'audit') {
+        loadAuditLogs();
+      }
+    });
+  });
+
+  elements.clearFiltersBtn.addEventListener('click', () => {
+    resetQuery(state);
+    state.includeDeleted = false;
+    syncFilterControls(elements, state.query, state.includeDeleted);
+    persistQuery();
+    persistIncludeDeleted();
+    loadUsers({ showLoading: true });
+    showToast(elements.toastRegion, 'Filtros redefinidos.', 'info');
   });
 
   const onSearch = debounce(() => {
@@ -68,7 +118,6 @@ function bindEvents() {
     persistQuery();
     loadUsers({ showLoading: true });
   }, 260);
-
   elements.searchInput.addEventListener('input', onSearch);
 
   elements.filtersForm.addEventListener('change', () => {
@@ -77,8 +126,13 @@ function bindEvents() {
     state.query.limit = Number.parseInt(elements.limitSelect.value, 10);
     state.query.page = 1;
 
+    state.includeDeleted = elements.includeDeletedInput.checked;
+
     persistQuery();
+    persistIncludeDeleted();
+
     loadUsers({ showLoading: true });
+    loadStats();
   });
 
   elements.prevPageBtn.addEventListener('click', () => {
@@ -101,30 +155,153 @@ function bindEvents() {
     loadUsers({ showLoading: true });
   });
 
-  elements.userForm.addEventListener('submit', handleSubmit);
+  elements.userForm.addEventListener('submit', handleUserSubmit);
   elements.cancelEditBtn.addEventListener('click', resetFormMode);
 
-  elements.usersTableBody.addEventListener('click', handleActionClick);
-  elements.usersCards.addEventListener('click', handleActionClick);
+  elements.usersTableBody.addEventListener('click', handleUserActionClick);
+  elements.usersCards.addEventListener('click', handleUserActionClick);
 
   elements.exportCsvBtn.addEventListener('click', exportCsv);
 
-  elements.cancelDeleteBtn.addEventListener('click', closeDeleteDialog);
-  elements.confirmDeleteBtn.addEventListener('click', confirmDelete);
+  elements.cancelDeleteBtn.addEventListener('click', closeConfirmDialog);
+  elements.confirmDeleteBtn.addEventListener('click', executePendingAction);
   elements.confirmDialog.addEventListener('close', () => {
-    state.pendingDeleteId = null;
+    state.pendingAction = null;
+  });
+
+  elements.refreshAuditBtn.addEventListener('click', loadAuditLogs);
+
+  elements.prevAuditBtn.addEventListener('click', () => {
+    if (!state.auditMeta.hasPreviousPage) {
+      return;
+    }
+
+    state.auditMeta.page -= 1;
+    loadAuditLogs();
+  });
+
+  elements.nextAuditBtn.addEventListener('click', () => {
+    if (!state.auditMeta.hasNextPage) {
+      return;
+    }
+
+    state.auditMeta.page += 1;
+    loadAuditLogs();
   });
 
   elements.nameInput.addEventListener('input', () => setFieldError(elements, 'name', ''));
   elements.emailInput.addEventListener('input', () => setFieldError(elements, 'email', ''));
 
-  window.addEventListener('keydown', (event) => {
+  elements.loginUsername.addEventListener('input', () => setLoginFieldError(elements, 'username', ''));
+  elements.loginPassword.addEventListener('input', () => setLoginFieldError(elements, 'password', ''));
+
+  window.addEventListener('keydown', async (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
       elements.searchInput.focus();
       elements.searchInput.select();
     }
+
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'r') {
+      event.preventDefault();
+      await refreshAllData();
+    }
   });
+}
+
+function getCurrentPermissions() {
+  const role = state.session?.user?.role ?? 'viewer';
+  return getPermissionsForRole(role, ROLE_PERMISSIONS);
+}
+
+async function restoreSession() {
+  try {
+    const profile = await getCurrentUser(state.session.token);
+    state.session.user = profile;
+    persistSession();
+
+    setAuthState(elements, true);
+    renderSession(elements, state.session);
+    applyPermissionsToUI();
+    syncFilterControls(elements, state.query, state.includeDeleted);
+
+    await refreshAllData();
+  } catch {
+    state.session = null;
+    persistSession();
+    setAuthState(elements, false);
+    renderSession(elements, null);
+  }
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+
+  const credentials = {
+    username: elements.loginUsername.value.trim(),
+    password: elements.loginPassword.value
+  };
+
+  clearLoginErrors(elements);
+
+  let hasValidationError = false;
+
+  if (credentials.username.length < 3) {
+    hasValidationError = true;
+    setLoginFieldError(elements, 'username', 'Informe um usuario valido.');
+  }
+
+  if (credentials.password.length < 8) {
+    hasValidationError = true;
+    setLoginFieldError(elements, 'password', 'A senha deve ter no minimo 8 caracteres.');
+  }
+
+  if (hasValidationError) {
+    return;
+  }
+
+  elements.loginSubmitBtn.disabled = true;
+
+  try {
+    const result = await login(credentials);
+
+    state.session = {
+      token: result.accessToken,
+      user: result.user
+    };
+
+    persistSession();
+
+    setAuthState(elements, true);
+    renderSession(elements, state.session);
+    applyPermissionsToUI();
+    syncFilterControls(elements, state.query, state.includeDeleted);
+
+    showToast(elements.toastRegion, `Bem-vindo, ${result.user.displayName}.`, 'success');
+
+    await refreshAllData();
+  } catch (error) {
+    showToast(elements.toastRegion, getErrorMessage(error), 'error');
+  } finally {
+    elements.loginSubmitBtn.disabled = false;
+  }
+}
+
+function handleLogout() {
+  state.session = null;
+  state.users = [];
+  state.auditLogs = [];
+  state.pendingAction = null;
+  state.editingUserId = null;
+
+  persistSession();
+
+  setAuthState(elements, false);
+  renderSession(elements, null);
+  resetFormMode();
+
+  elements.loginForm.reset();
+  showToast(elements.toastRegion, 'Sessao encerrada com sucesso.', 'info');
 }
 
 async function loadHealth() {
@@ -136,7 +313,32 @@ async function loadHealth() {
   }
 }
 
+async function refreshAllData() {
+  if (!state.session?.token) {
+    return;
+  }
+
+  await Promise.all([
+    loadUsers({ showLoading: true }),
+    loadStats(),
+    loadMetrics(),
+    state.activeView === 'audit' ? loadAuditLogs() : Promise.resolve()
+  ]);
+}
+
 async function loadUsers(options = {}) {
+  if (!state.session?.token) {
+    return;
+  }
+
+  const permissions = getCurrentPermissions();
+
+  if (state.includeDeleted && !permissions.canToggleDeleted) {
+    state.includeDeleted = false;
+    elements.includeDeletedInput.checked = false;
+    persistIncludeDeleted();
+  }
+
   const showLoading = options.showLoading !== false;
   state.inFlightUsersRequest += 1;
   const requestId = state.inFlightUsersRequest;
@@ -147,7 +349,10 @@ async function loadUsers(options = {}) {
   }
 
   try {
-    const payload = await fetchUsers(state.query);
+    const payload = await fetchUsers({
+      ...state.query,
+      includeDeleted: state.includeDeleted
+    }, state.session.token);
 
     if (requestId !== state.inFlightUsersRequest) {
       return;
@@ -159,21 +364,27 @@ async function loadUsers(options = {}) {
 
     persistQuery();
 
-    renderUsers(elements, state.users);
+    renderUsers(elements, state.users, permissions);
     renderPagination(elements, state.meta);
-    setFeedback(elements, `${state.meta.totalItems} usuario(s) encontrado(s).`);
+    setFeedback(elements, `${state.meta.totalItems} usuario(s) encontrados.`);
   } catch (error) {
     if (requestId !== state.inFlightUsersRequest) {
       return;
     }
 
-    renderUsers(elements, []);
+    if (error.statusCode === 401) {
+      handleSessionExpired();
+      return;
+    }
+
+    renderUsers(elements, [], permissions);
     renderPagination(elements, {
       page: 1,
       totalPages: 1,
       hasPreviousPage: false,
       hasNextPage: false
     });
+
     setFeedback(elements, 'Falha ao carregar usuarios.');
     showToast(elements.toastRegion, getErrorMessage(error), 'error');
   } finally {
@@ -184,18 +395,106 @@ async function loadUsers(options = {}) {
 }
 
 async function loadStats() {
+  if (!state.session?.token) {
+    return;
+  }
+
+  const permissions = getCurrentPermissions();
+
   try {
-    const payload = await fetchStats();
-    state.stats = payload;
+    state.stats = await fetchStats(state.session.token, state.includeDeleted && permissions.canToggleDeleted);
     renderStats(elements, state.stats);
   } catch (error) {
+    if (error.statusCode === 401) {
+      handleSessionExpired();
+      return;
+    }
+
     showToast(elements.toastRegion, getErrorMessage(error), 'error');
   }
 }
 
-function handleActionClick(event) {
+async function loadMetrics() {
+  if (!state.session?.token) {
+    return;
+  }
+
+  const permissions = getCurrentPermissions();
+
+  if (!permissions.canReadMetrics) {
+    renderMetrics(elements, state.metrics, false);
+    return;
+  }
+
+  try {
+    state.metrics = await fetchMetrics(state.session.token);
+    renderMetrics(elements, state.metrics, true);
+  } catch (error) {
+    if (error.statusCode === 401) {
+      handleSessionExpired();
+      return;
+    }
+
+    showToast(elements.toastRegion, getErrorMessage(error), 'error');
+  }
+}
+
+async function loadAuditLogs() {
+  if (!state.session?.token) {
+    return;
+  }
+
+  const permissions = getCurrentPermissions();
+
+  if (!permissions.canReadAudit) {
+    setAuditFeedback(elements, 'Acesso restrito ao perfil administrador.');
+    renderAuditLogs(elements, []);
+    renderAuditPagination(elements, {
+      page: 1,
+      totalPages: 1,
+      hasPreviousPage: false,
+      hasNextPage: false
+    });
+    return;
+  }
+
+  setAuditLoading(elements, true);
+  setAuditFeedback(elements, 'Carregando eventos de auditoria...');
+
+  try {
+    const result = await fetchAuditLogs({
+      page: state.auditMeta.page,
+      limit: state.auditMeta.limit
+    }, state.session.token);
+
+    state.auditLogs = result.data;
+    state.auditMeta = result.meta;
+
+    renderAuditLogs(elements, state.auditLogs);
+    renderAuditPagination(elements, state.auditMeta);
+    setAuditFeedback(elements, `${state.auditMeta.totalItems} evento(s) encontrados.`);
+  } catch (error) {
+    if (error.statusCode === 401) {
+      handleSessionExpired();
+      return;
+    }
+
+    renderAuditLogs(elements, []);
+    setAuditFeedback(elements, 'Falha ao carregar auditoria.');
+    showToast(elements.toastRegion, getErrorMessage(error), 'error');
+  } finally {
+    elements.auditRegion.setAttribute('aria-busy', 'false');
+  }
+}
+
+function handleUserActionClick(event) {
   const trigger = event.target.closest('[data-action]');
   if (!(trigger instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  const action = trigger.dataset.action;
+  if (!action || action === 'none') {
     return;
   }
 
@@ -206,7 +505,10 @@ function handleActionClick(event) {
     return;
   }
 
-  const action = trigger.dataset.action;
+  if (action === 'copyEmail') {
+    copyEmail(user.email);
+    return;
+  }
 
   if (action === 'edit') {
     enterEditMode(user);
@@ -214,12 +516,22 @@ function handleActionClick(event) {
   }
 
   if (action === 'delete') {
-    openDeleteDialog(user);
+    openConfirmDialog({
+      type: 'delete',
+      user,
+      label: 'Remover usuario',
+      description: `Deseja remover ${user.name}? A exclusao e logica e pode ser desfeita.`
+    });
     return;
   }
 
-  if (action === 'copyEmail') {
-    copyEmail(user.email);
+  if (action === 'restore') {
+    openConfirmDialog({
+      type: 'restore',
+      user,
+      label: 'Restaurar usuario',
+      description: `Deseja restaurar ${user.name} para o estado ativo?`
+    });
   }
 }
 
@@ -228,13 +540,12 @@ async function copyEmail(email) {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(email);
     } else {
-      const tempInput = document.createElement('textarea');
-      tempInput.value = email;
-      document.body.appendChild(tempInput);
-      tempInput.focus();
-      tempInput.select();
+      const temp = document.createElement('textarea');
+      temp.value = email;
+      document.body.appendChild(temp);
+      temp.select();
       document.execCommand('copy');
-      tempInput.remove();
+      temp.remove();
     }
 
     showToast(elements.toastRegion, 'Email copiado para a area de transferencia.', 'success');
@@ -244,6 +555,12 @@ async function copyEmail(email) {
 }
 
 function enterEditMode(user) {
+  const permissions = getCurrentPermissions();
+  if (!permissions.canEdit) {
+    showToast(elements.toastRegion, 'Seu perfil nao pode editar usuarios.', 'info');
+    return;
+  }
+
   state.editingUserId = user.id;
   elements.editingId.value = String(user.id);
   elements.nameInput.value = user.name;
@@ -261,15 +578,21 @@ function resetFormMode() {
   clearFieldErrors(elements);
 }
 
-async function handleSubmit(event) {
+async function handleUserSubmit(event) {
   event.preventDefault();
+
+  const permissions = getCurrentPermissions();
+  if (!permissions.canCreate && !permissions.canEdit) {
+    showToast(elements.toastRegion, 'Seu perfil possui apenas acesso de leitura.', 'info');
+    return;
+  }
 
   const payload = {
     name: elements.nameInput.value.trim(),
     email: elements.emailInput.value.trim().toLowerCase()
   };
 
-  const errors = validateForm(payload);
+  const errors = validateUserForm(payload);
   if (errors.name || errors.email) {
     setFieldError(elements, 'name', errors.name ?? '');
     setFieldError(elements, 'email', errors.email ?? '');
@@ -280,23 +603,28 @@ async function handleSubmit(event) {
 
   try {
     if (state.editingUserId) {
-      await updateUser(state.editingUserId, payload);
+      await updateUser(state.editingUserId, payload, state.session.token);
       showToast(elements.toastRegion, 'Usuario atualizado com sucesso.', 'success');
     } else {
-      await createUser(payload);
+      await createUser(payload, state.session.token);
       showToast(elements.toastRegion, 'Usuario criado com sucesso.', 'success');
     }
 
     resetFormMode();
-    await Promise.all([loadUsers({ showLoading: false }), loadStats()]);
+    await Promise.all([loadUsers({ showLoading: false }), loadStats(), loadMetrics()]);
   } catch (error) {
+    if (error.statusCode === 401) {
+      handleSessionExpired();
+      return;
+    }
+
     showToast(elements.toastRegion, getErrorMessage(error), 'error');
   } finally {
     elements.submitBtn.disabled = false;
   }
 }
 
-function validateForm(payload) {
+function validateUserForm(payload) {
   const result = {};
 
   if (payload.name.length < 2 || payload.name.length > 80) {
@@ -311,46 +639,65 @@ function validateForm(payload) {
   return result;
 }
 
-function openDeleteDialog(user) {
-  state.pendingDeleteId = user.id;
-  elements.confirmText.textContent = `Deseja remover ${user.name} (ID ${user.id})?`;
+function openConfirmDialog(action) {
+  state.pendingAction = action;
+  elements.confirmText.textContent = action.description;
+  elements.confirmDeleteBtn.textContent = action.label;
 
   if (typeof elements.confirmDialog.showModal === 'function') {
     elements.confirmDialog.showModal();
     return;
   }
 
-  if (window.confirm(elements.confirmText.textContent)) {
-    confirmDelete();
+  if (window.confirm(action.description)) {
+    executePendingAction();
   }
 }
 
-function closeDeleteDialog() {
+function closeConfirmDialog() {
   if (elements.confirmDialog.open && typeof elements.confirmDialog.close === 'function') {
     elements.confirmDialog.close();
   }
 
-  state.pendingDeleteId = null;
+  state.pendingAction = null;
 }
 
-async function confirmDelete() {
-  if (!state.pendingDeleteId) {
+async function executePendingAction() {
+  if (!state.pendingAction || !state.session?.token) {
     return;
   }
 
   elements.confirmDeleteBtn.disabled = true;
 
   try {
-    await removeUser(state.pendingDeleteId);
+    if (state.pendingAction.type === 'delete') {
+      await removeUser(state.pendingAction.user.id, state.session.token);
+      showToast(elements.toastRegion, 'Usuario removido com sucesso.', 'success');
+    }
 
-    if (state.editingUserId === state.pendingDeleteId) {
+    if (state.pendingAction.type === 'restore') {
+      await restoreUser(state.pendingAction.user.id, state.session.token);
+      showToast(elements.toastRegion, 'Usuario restaurado com sucesso.', 'success');
+    }
+
+    if (state.editingUserId === state.pendingAction.user.id) {
       resetFormMode();
     }
 
-    showToast(elements.toastRegion, 'Usuario removido com sucesso.', 'success');
-    closeDeleteDialog();
-    await Promise.all([loadUsers({ showLoading: false }), loadStats()]);
+    closeConfirmDialog();
+
+    await Promise.all([
+      loadUsers({ showLoading: false }),
+      loadStats(),
+      loadMetrics(),
+      state.activeView === 'audit' ? loadAuditLogs() : Promise.resolve()
+    ]);
   } catch (error) {
+    if (error.statusCode === 401) {
+      handleSessionExpired();
+      return;
+    }
+
     showToast(elements.toastRegion, getErrorMessage(error), 'error');
   } finally {
     elements.confirmDeleteBtn.disabled = false;
@@ -358,27 +705,75 @@ async function confirmDelete() {
 }
 
 async function exportCsv() {
+  if (!state.session?.token) {
+    return;
+  }
+
   elements.exportCsvBtn.disabled = true;
-  const originalLabel = elements.exportCsvBtn.textContent;
+  const original = elements.exportCsvBtn.textContent;
   elements.exportCsvBtn.textContent = 'Exportando...';
 
   try {
-    const allUsers = await fetchAllUsersForExport(state.query);
+    const users = await fetchAllUsersForExport({
+      ...state.query,
+      includeDeleted: state.includeDeleted
+    }, state.session.token);
 
-    if (allUsers.length === 0) {
+    if (users.length === 0) {
       showToast(elements.toastRegion, 'Nenhum dado para exportar com os filtros atuais.', 'info');
       return;
     }
 
-    const csv = toCsv(allUsers);
+    const csv = toCsv(users);
     const timestamp = new Date().toISOString().slice(0, 19).replaceAll(':', '-');
     downloadCsv(`usuarios-${timestamp}.csv`, csv);
 
-    showToast(elements.toastRegion, `${allUsers.length} usuario(s) exportado(s) em CSV.`, 'success');
+    showToast(elements.toastRegion, `${users.length} usuario(s) exportado(s).`, 'success');
   } catch (error) {
+    if (error.statusCode === 401) {
+      handleSessionExpired();
+      return;
+    }
+
     showToast(elements.toastRegion, getErrorMessage(error), 'error');
   } finally {
     elements.exportCsvBtn.disabled = false;
-    elements.exportCsvBtn.textContent = originalLabel;
+    elements.exportCsvBtn.textContent = original;
   }
+}
+
+function applyPermissionsToUI() {
+  const permissions = getCurrentPermissions();
+  const role = state.session?.user?.role ?? 'viewer';
+  const auditNavButton = elements.navButtons.find((button) => button.dataset.viewTarget === 'audit');
+
+  if (!permissions.canReadAudit && state.activeView === 'audit') {
+    state.activeView = 'operations';
+    persistActiveView();
+  }
+
+  if (auditNavButton) {
+    auditNavButton.classList.toggle('is-hidden', !permissions.canReadAudit);
+    auditNavButton.disabled = !permissions.canReadAudit;
+    auditNavButton.title = permissions.canReadAudit ? '' : 'Disponivel apenas para administradores';
+  }
+
+  if (!permissions.canToggleDeleted) {
+    state.includeDeleted = false;
+    elements.includeDeletedInput.checked = false;
+    persistIncludeDeleted();
+  }
+
+  applyRoleCapabilities(elements, permissions, role);
+  setActiveView(elements, state.activeView);
+  renderMetrics(elements, state.metrics, permissions.canReadMetrics);
+}
+
+function handleSessionExpired() {
+  state.session = null;
+  persistSession();
+  setAuthState(elements, false);
+  renderSession(elements, null);
+  resetFormMode();
+  showToast(elements.toastRegion, 'Sua sessao expirou. Entre novamente.', 'error');
 }

@@ -1,11 +1,14 @@
 import { MAX_EXPORT_LIMIT } from './constants.js';
 
 async function request(path, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
+  };
+
   const response = await fetch(path, {
     method: options.method ?? 'GET',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
 
@@ -15,53 +18,117 @@ async function request(path, options = {}) {
     const error = new Error(payload?.error?.message ?? 'Request failed.');
     error.statusCode = response.status;
     error.code = payload?.error?.code ?? 'REQUEST_FAILED';
+    error.details = payload?.error?.details ?? null;
     throw error;
   }
 
   return payload;
 }
 
-export function checkHealth() {
-  return request('/api/health');
+export async function checkHealth() {
+  const payload = await request('/api/v1/health');
+  return payload.data;
 }
 
-export function fetchUsers(query) {
+export async function login(payload) {
+  const response = await request('/api/v1/auth/login', {
+    method: 'POST',
+    body: payload
+  });
+
+  return response.data;
+}
+
+export async function getCurrentUser(token) {
+  const response = await request('/api/v1/auth/me', { token });
+  return response.data;
+}
+
+export async function fetchUsers(query, token) {
   const params = new URLSearchParams({
     search: query.search,
     sortBy: query.sortBy,
     sortOrder: query.sortOrder,
     page: String(query.page),
+    limit: String(query.limit),
+    includeDeleted: String(query.includeDeleted === true)
+  });
+
+  const response = await request(`/api/v1/users?${params.toString()}`, { token });
+
+  return {
+    data: response.data,
+    meta: response.meta
+  };
+}
+
+export async function fetchStats(token, includeDeleted = false) {
+  const params = new URLSearchParams({
+    includeDeleted: String(includeDeleted)
+  });
+
+  const response = await request(`/api/v1/stats?${params.toString()}`, { token });
+  return response.data;
+}
+
+export async function createUser(payload, token) {
+  const response = await request('/api/v1/users', {
+    method: 'POST',
+    body: payload,
+    token
+  });
+
+  return response.data;
+}
+
+export async function updateUser(userId, payload, token) {
+  const response = await request(`/api/v1/users/${userId}`, {
+    method: 'PUT',
+    body: payload,
+    token
+  });
+
+  return response.data;
+}
+
+export async function removeUser(userId, token) {
+  const response = await request(`/api/v1/users/${userId}`, {
+    method: 'DELETE',
+    token
+  });
+
+  return response.data;
+}
+
+export async function restoreUser(userId, token) {
+  const response = await request(`/api/v1/users/${userId}/restore`, {
+    method: 'POST',
+    token
+  });
+
+  return response.data;
+}
+
+export async function fetchAuditLogs(query, token) {
+  const params = new URLSearchParams({
+    page: String(query.page),
     limit: String(query.limit)
   });
 
-  return request(`/api/users?${params.toString()}`);
+  const response = await request(`/api/v1/audit-logs?${params.toString()}`, { token });
+
+  return {
+    data: response.data,
+    meta: response.meta
+  };
 }
 
-export function fetchStats() {
-  return request('/api/stats');
+export async function fetchMetrics(token) {
+  const response = await request('/api/v1/metrics', { token });
+  return response.data;
 }
 
-export function createUser(payload) {
-  return request('/api/users', {
-    method: 'POST',
-    body: payload
-  });
-}
-
-export function updateUser(userId, payload) {
-  return request(`/api/users/${userId}`, {
-    method: 'PUT',
-    body: payload
-  });
-}
-
-export function removeUser(userId) {
-  return request(`/api/users/${userId}`, {
-    method: 'DELETE'
-  });
-}
-
-export async function fetchAllUsersForExport(query) {
+export async function fetchAllUsersForExport(query, token) {
   const allUsers = [];
   let currentPage = 1;
   let totalPages = 1;
@@ -71,7 +138,7 @@ export async function fetchAllUsersForExport(query) {
       ...query,
       page: currentPage,
       limit: MAX_EXPORT_LIMIT
-    });
+    }, token);
 
     allUsers.push(...payload.data);
     totalPages = payload.meta.totalPages;

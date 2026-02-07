@@ -1,5 +1,5 @@
 import { createActionButton, createEmptyState, createSkeleton } from './dom.js';
-import { formatDate } from './utils.js';
+import { describeRole, formatDate } from './utils.js';
 
 export function applyDensity(elements, density) {
   elements.body.dataset.density = density;
@@ -10,26 +10,59 @@ export function setHealthStatus(elements, isOnline) {
   if (isOnline) {
     elements.healthStatus.textContent = 'Servico online';
     elements.healthStatus.style.background = '#ecfdf5';
-    elements.healthStatus.style.color = '#0b7a49';
-    elements.healthStatus.style.borderColor = 'rgba(11,122,73,0.28)';
+    elements.healthStatus.style.color = '#0d9a63';
+    elements.healthStatus.style.borderColor = 'rgba(13,154,99,0.28)';
     return;
   }
 
   elements.healthStatus.textContent = 'Servico indisponivel';
   elements.healthStatus.style.background = '#fef2f2';
-  elements.healthStatus.style.color = '#b3261e';
-  elements.healthStatus.style.borderColor = 'rgba(179,38,30,0.25)';
+  elements.healthStatus.style.color = '#b42318';
+  elements.healthStatus.style.borderColor = 'rgba(180,35,24,0.28)';
 }
 
-export function syncFilterControls(elements, query) {
+export function setAuthState(elements, isAuthenticated) {
+  elements.authGate.classList.toggle('is-hidden', isAuthenticated);
+  elements.appContent.classList.toggle('is-hidden', !isAuthenticated);
+  elements.logoutBtn.disabled = !isAuthenticated;
+}
+
+export function renderSession(elements, session) {
+  if (!session?.user) {
+    elements.sessionUsername.textContent = '-';
+    elements.sessionRole.textContent = '-';
+    return;
+  }
+
+  elements.sessionUsername.textContent = session.user.username;
+  elements.sessionRole.textContent = describeRole(session.user.role);
+}
+
+export function setActiveView(elements, view) {
+  elements.navButtons.forEach((button) => {
+    const isActive = button.dataset.viewTarget === view;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-current', isActive ? 'page' : 'false');
+  });
+
+  elements.operationsView.classList.toggle('is-active', view === 'operations');
+  elements.auditView.classList.toggle('is-active', view === 'audit');
+}
+
+export function syncFilterControls(elements, query, includeDeleted) {
   elements.searchInput.value = query.search;
   elements.sortBySelect.value = query.sortBy;
   elements.sortOrderSelect.value = query.sortOrder;
   elements.limitSelect.value = String(query.limit);
+  elements.includeDeletedInput.checked = includeDeleted === true;
 }
 
 export function setFeedback(elements, message) {
   elements.feedback.textContent = message;
+}
+
+export function setAuditFeedback(elements, message) {
+  elements.auditFeedback.textContent = message;
 }
 
 export function setUsersLoading(elements, isLoading) {
@@ -39,39 +72,43 @@ export function setUsersLoading(elements, isLoading) {
     return;
   }
 
-  const loadingRow = document.createElement('tr');
-  const loadingCell = document.createElement('td');
-  loadingCell.colSpan = 5;
-  loadingCell.appendChild(createSkeleton());
-  loadingRow.appendChild(loadingCell);
+  const row = document.createElement('tr');
+  const cell = document.createElement('td');
+  cell.colSpan = 6;
+  cell.appendChild(createSkeleton(6));
+  row.appendChild(cell);
 
-  elements.usersTableBody.replaceChildren(loadingRow);
-
-  const cardsSkeleton = document.createElement('div');
-  cardsSkeleton.className = 'loading-skeleton';
-
-  for (let index = 0; index < 3; index += 1) {
-    const line = document.createElement('span');
-    line.style.width = `${88 - index * 10}%`;
-    cardsSkeleton.appendChild(line);
-  }
-
-  elements.usersCards.replaceChildren(cardsSkeleton);
+  elements.usersTableBody.replaceChildren(row);
+  elements.usersCards.replaceChildren(createSkeleton(4));
 }
 
-export function renderUsers(elements, users) {
+export function setAuditLoading(elements, isLoading) {
+  elements.auditRegion.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+
+  if (!isLoading) {
+    return;
+  }
+
+  const row = document.createElement('tr');
+  const cell = document.createElement('td');
+  cell.colSpan = 5;
+  cell.appendChild(createSkeleton(5));
+  row.appendChild(cell);
+
+  elements.auditTableBody.replaceChildren(row);
+}
+
+export function renderUsers(elements, users, permissions) {
   if (users.length === 0) {
     const emptyTableRow = document.createElement('tr');
     const emptyCell = document.createElement('td');
-    emptyCell.colSpan = 5;
-    emptyCell.appendChild(
-      createEmptyState('Nenhum usuario encontrado', 'Altere os filtros ou cadastre um novo usuario para continuar.')
-    );
+    emptyCell.colSpan = 6;
+    emptyCell.appendChild(createEmptyState('Sem usuarios para este filtro', 'Ajuste os filtros para visualizar resultados.'));
     emptyTableRow.appendChild(emptyCell);
 
     elements.usersTableBody.replaceChildren(emptyTableRow);
     elements.usersCards.replaceChildren(
-      createEmptyState('Sem resultados', 'Nao encontramos usuarios para o filtro aplicado.')
+      createEmptyState('Sem resultados', 'Nao existem usuarios para o contexto selecionado.')
     );
     return;
   }
@@ -80,6 +117,8 @@ export function renderUsers(elements, users) {
   const cardsFragment = document.createDocumentFragment();
 
   users.forEach((user, index) => {
+    const isDeleted = Boolean(user.deletedAt);
+
     const row = document.createElement('tr');
     row.style.setProperty('--row-index', String(index));
 
@@ -87,59 +126,100 @@ export function renderUsers(elements, users) {
     idCell.textContent = String(user.id);
 
     const nameCell = document.createElement('td');
-    const nameStrong = document.createElement('span');
-    nameStrong.className = 'user-name';
-    nameStrong.textContent = user.name;
-    nameCell.appendChild(nameStrong);
+    nameCell.textContent = user.name;
 
     const emailCell = document.createElement('td');
-    const emailSpan = document.createElement('span');
-    emailSpan.className = 'user-email';
-    emailSpan.textContent = user.email;
-    emailCell.appendChild(emailSpan);
+    emailCell.textContent = user.email;
 
-    const createdAtCell = document.createElement('td');
-    createdAtCell.textContent = formatDate(user.createdAt);
+    const updatedCell = document.createElement('td');
+    updatedCell.textContent = formatDate(user.updatedAt ?? user.createdAt);
+
+    const statusCell = document.createElement('td');
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'badge';
+    statusBadge.dataset.status = isDeleted ? 'deleted' : 'active';
+    statusBadge.textContent = isDeleted ? 'Removido' : 'Ativo';
+    statusCell.appendChild(statusBadge);
 
     const actionsCell = document.createElement('td');
     const actions = document.createElement('div');
     actions.className = 'cell-actions';
-    actions.appendChild(createActionButton('Editar', 'edit', user.id));
-    actions.appendChild(createActionButton('Copiar email', 'copyEmail', user.id));
-    actions.appendChild(createActionButton('Excluir', 'delete', user.id, { kind: 'danger' }));
+
+    if (!isDeleted) {
+      actions.appendChild(createActionButton('Copiar email', 'copyEmail', user.id));
+
+      if (permissions.canEdit) {
+        actions.appendChild(createActionButton('Editar', 'edit', user.id));
+      }
+
+      if (permissions.canDelete) {
+        actions.appendChild(createActionButton('Remover', 'delete', user.id, { kind: 'danger' }));
+      }
+    }
+
+    if (isDeleted && permissions.canRestore) {
+      actions.appendChild(createActionButton('Restaurar', 'restore', user.id, { kind: 'warn' }));
+    }
+
+    if (actions.children.length === 0) {
+      actions.appendChild(createActionButton('Sem permissao', 'none', user.id, { disabled: true }));
+    }
+
     actionsCell.appendChild(actions);
 
-    row.append(idCell, nameCell, emailCell, createdAtCell, actionsCell);
+    row.append(idCell, nameCell, emailCell, updatedCell, statusCell, actionsCell);
     tableFragment.appendChild(row);
 
     const card = document.createElement('article');
     card.className = 'user-card';
 
-    const title = document.createElement('h3');
+    const title = document.createElement('h4');
     title.textContent = user.name;
 
-    const email = document.createElement('p');
+    const infoEmail = document.createElement('p');
     const emailLabel = document.createElement('strong');
     emailLabel.textContent = 'Email:';
-    email.append(emailLabel, ` ${user.email}`);
+    infoEmail.append(emailLabel, ` ${user.email}`);
 
-    const id = document.createElement('p');
+    const infoId = document.createElement('p');
     const idLabel = document.createElement('strong');
     idLabel.textContent = 'ID:';
-    id.append(idLabel, ` ${user.id}`);
+    infoId.append(idLabel, ` ${user.id}`);
 
-    const createdAt = document.createElement('p');
-    const createdAtLabel = document.createElement('strong');
-    createdAtLabel.textContent = 'Criado:';
-    createdAt.append(createdAtLabel, ` ${formatDate(user.createdAt)}`);
+    const infoStatus = document.createElement('p');
+    const statusLabel = document.createElement('strong');
+    statusLabel.textContent = 'Status:';
+    infoStatus.append(statusLabel, ` ${isDeleted ? 'Removido' : 'Ativo'}`);
+
+    const infoUpdated = document.createElement('p');
+    const updatedLabel = document.createElement('strong');
+    updatedLabel.textContent = 'Atualizado:';
+    infoUpdated.append(updatedLabel, ` ${formatDate(user.updatedAt ?? user.createdAt)}`);
 
     const cardActions = document.createElement('div');
     cardActions.className = 'cell-actions';
-    cardActions.appendChild(createActionButton('Editar', 'edit', user.id));
-    cardActions.appendChild(createActionButton('Copiar email', 'copyEmail', user.id));
-    cardActions.appendChild(createActionButton('Excluir', 'delete', user.id, { kind: 'danger' }));
 
-    card.append(title, email, id, createdAt, cardActions);
+    if (!isDeleted) {
+      cardActions.appendChild(createActionButton('Copiar email', 'copyEmail', user.id));
+
+      if (permissions.canEdit) {
+        cardActions.appendChild(createActionButton('Editar', 'edit', user.id));
+      }
+
+      if (permissions.canDelete) {
+        cardActions.appendChild(createActionButton('Remover', 'delete', user.id, { kind: 'danger' }));
+      }
+    }
+
+    if (isDeleted && permissions.canRestore) {
+      cardActions.appendChild(createActionButton('Restaurar', 'restore', user.id, { kind: 'warn' }));
+    }
+
+    if (cardActions.children.length === 0) {
+      cardActions.appendChild(createActionButton('Sem permissao', 'none', user.id, { disabled: true }));
+    }
+
+    card.append(title, infoEmail, infoId, infoStatus, infoUpdated, cardActions);
     cardsFragment.appendChild(card);
   });
 
@@ -154,42 +234,149 @@ export function renderPagination(elements, meta) {
 }
 
 export function renderStats(elements, stats) {
-  elements.totalUsersValue.textContent = String(stats.totalUsers ?? 0);
-  elements.topDomainValue.textContent = stats.topDomains?.[0]?.domain ?? '-';
+  const totalUsers = Number(stats.totalUsers ?? 0);
+  const activeUsers = Number(stats.activeUsers ?? totalUsers);
+  const deletedUsers = Number(stats.deletedUsers ?? Math.max(0, totalUsers - activeUsers));
+
+  elements.totalUsersValue.textContent = String(totalUsers);
+  elements.activeUsersLabel.textContent = `Ativos: ${activeUsers}`;
+  elements.deletedUsersValue.textContent = String(deletedUsers);
+
+  const topDomain = stats.topDomains?.[0];
+  elements.topDomainValue.textContent = topDomain?.domain ?? '-';
+  elements.topDomainCount.textContent = `${topDomain?.count ?? 0} ocorrencias`;
 
   const domainItems = [];
   const domains = stats.topDomains?.length ? stats.topDomains : [{ domain: '-', count: 0 }];
   for (const item of domains) {
     const li = document.createElement('li');
 
-    const domainName = document.createElement('span');
-    domainName.textContent = item.domain;
+    const left = document.createElement('span');
+    left.textContent = item.domain;
 
-    const domainCount = document.createElement('strong');
-    domainCount.textContent = String(item.count);
+    const right = document.createElement('strong');
+    right.textContent = String(item.count);
 
-    li.append(domainName, domainCount);
+    li.append(left, right);
     domainItems.push(li);
   }
 
   elements.domainList.replaceChildren(...domainItems);
 
   const recentItems = [];
-  const recentUsers = stats.recentUsers?.length ? stats.recentUsers : [{ name: 'Sem registros', email: '-' }];
-  for (const user of recentUsers) {
+  const recent = stats.recentUsers?.length ? stats.recentUsers : [{ name: 'Sem registros', email: '-' }];
+  for (const user of recent) {
     const li = document.createElement('li');
 
-    const userName = document.createElement('span');
-    userName.textContent = user.name;
+    const left = document.createElement('span');
+    left.textContent = user.name;
 
-    const userEmail = document.createElement('small');
-    userEmail.textContent = user.email;
+    const right = document.createElement('small');
+    right.textContent = user.email;
 
-    li.append(userName, userEmail);
+    li.append(left, right);
     recentItems.push(li);
   }
 
   elements.recentList.replaceChildren(...recentItems);
+}
+
+export function renderMetrics(elements, metrics, canReadMetrics) {
+  if (!canReadMetrics) {
+    elements.avgLatencyValue.textContent = '-';
+    elements.requestCountValue.textContent = 'Sem permissao';
+    elements.metricsList.replaceChildren(createMetricRow('Acesso', 'Restrito ao admin'));
+    return;
+  }
+
+  elements.avgLatencyValue.textContent = `${metrics.averageLatencyMs ?? 0} ms`;
+  elements.requestCountValue.textContent = `${metrics.totalRequests ?? 0} requests`;
+
+  const routeEntries = Object.entries(metrics.routes ?? {});
+  const topRoutes = routeEntries.sort((left, right) => right[1] - left[1]).slice(0, 6);
+
+  const metricItems = [];
+
+  metricItems.push(createMetricRow('Total requests', String(metrics.totalRequests ?? 0)));
+  metricItems.push(createMetricRow('Latencia media', `${metrics.averageLatencyMs ?? 0} ms`));
+
+  for (const [status, count] of Object.entries(metrics.statuses ?? {})) {
+    metricItems.push(createMetricRow(`Status ${status}`, String(count)));
+  }
+
+  for (const [route, count] of topRoutes) {
+    metricItems.push(createMetricRow(route, String(count)));
+  }
+
+  if (metricItems.length === 0) {
+    metricItems.push(createMetricRow('Sem dados', 'Aguardando requisicoes'));
+  }
+
+  elements.metricsList.replaceChildren(...metricItems);
+}
+
+export function renderAuditLogs(elements, logs) {
+  if (!logs.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 5;
+    cell.appendChild(createEmptyState('Sem eventos de auditoria', 'Os eventos aparecerao apos operacoes autenticadas.'));
+    row.appendChild(cell);
+    elements.auditTableBody.replaceChildren(row);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  logs.forEach((log) => {
+    const row = document.createElement('tr');
+
+    const createdAtCell = document.createElement('td');
+    createdAtCell.textContent = formatDate(log.createdAt);
+
+    const actionCell = document.createElement('td');
+    actionCell.textContent = log.action;
+
+    const actorCell = document.createElement('td');
+    actorCell.textContent = log.actor;
+
+    const statusCell = document.createElement('td');
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'badge';
+    statusBadge.dataset.status = log.status === 'success' ? 'active' : 'deleted';
+    statusBadge.textContent = log.status;
+    statusCell.appendChild(statusBadge);
+
+    const detailsCell = document.createElement('td');
+    detailsCell.textContent = log.metadata ? JSON.stringify(log.metadata) : '-';
+
+    row.append(createdAtCell, actionCell, actorCell, statusCell, detailsCell);
+    fragment.appendChild(row);
+  });
+
+  elements.auditTableBody.replaceChildren(fragment);
+}
+
+export function renderAuditPagination(elements, meta) {
+  elements.auditPaginationLabel.textContent = `Pagina ${meta.page} de ${meta.totalPages}`;
+  elements.prevAuditBtn.disabled = !meta.hasPreviousPage;
+  elements.nextAuditBtn.disabled = !meta.hasNextPage;
+}
+
+export function applyRoleCapabilities(elements, permissions, role) {
+  elements.includeDeletedField.classList.toggle('is-hidden', !permissions.canToggleDeleted);
+
+  elements.userForm.classList.toggle('is-hidden', !permissions.canCreate && !permissions.canEdit);
+
+  if (!permissions.canCreate && !permissions.canEdit) {
+    elements.permissionHint.textContent = 'Seu perfil possui apenas permissao de leitura.';
+  } else if (role === 'editor') {
+    elements.permissionHint.textContent = 'Perfil editor: criar e editar usuarios ativos.';
+  } else {
+    elements.permissionHint.textContent = 'Perfil admin: acesso completo, incluindo remocao e restauracao.';
+  }
+
+  elements.refreshAuditBtn.disabled = !permissions.canReadAudit;
 }
 
 export function setFormMode(elements, mode) {
@@ -218,4 +405,33 @@ export function setFieldError(elements, field, message) {
 export function clearFieldErrors(elements) {
   setFieldError(elements, 'name', '');
   setFieldError(elements, 'email', '');
+}
+
+export function setLoginFieldError(elements, field, message) {
+  if (field === 'username') {
+    elements.loginUsernameError.textContent = message;
+    elements.loginUsername.setAttribute('aria-invalid', message ? 'true' : 'false');
+    return;
+  }
+
+  elements.loginPasswordError.textContent = message;
+  elements.loginPassword.setAttribute('aria-invalid', message ? 'true' : 'false');
+}
+
+export function clearLoginErrors(elements) {
+  setLoginFieldError(elements, 'username', '');
+  setLoginFieldError(elements, 'password', '');
+}
+
+function createMetricRow(label, value) {
+  const li = document.createElement('li');
+
+  const left = document.createElement('span');
+  left.textContent = label;
+
+  const right = document.createElement('strong');
+  right.textContent = value;
+
+  li.append(left, right);
+  return li;
 }

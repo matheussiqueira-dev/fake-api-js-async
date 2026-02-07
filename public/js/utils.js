@@ -41,7 +41,7 @@ export function normalizeDensity(value) {
 }
 
 export function normalizeSortBy(value) {
-  const allowed = new Set(['id', 'name', 'email', 'createdAt']);
+  const allowed = new Set(['id', 'name', 'email', 'createdAt', 'updatedAt']);
   return allowed.has(value) ? value : 'name';
 }
 
@@ -55,12 +55,23 @@ export function normalizeLimit(value) {
   return allowed.has(normalized) ? normalized : 6;
 }
 
+export function normalizeView(value) {
+  return value === 'audit' ? 'audit' : 'operations';
+}
+
 export function toCsv(rows) {
-  const header = ['id', 'name', 'email', 'createdAt'];
+  const header = ['id', 'name', 'email', 'createdAt', 'updatedAt', 'deletedAt'];
   const lines = [header.join(',')];
 
   for (const row of rows) {
-    const values = [row.id, row.name, row.email, row.createdAt].map((value) => {
+    const values = [
+      row.id,
+      row.name,
+      row.email,
+      row.createdAt,
+      row.updatedAt,
+      row.deletedAt ?? ''
+    ].map((value) => {
       const text = String(value ?? '');
       return `"${text.replaceAll('"', '""')}"`;
     });
@@ -83,4 +94,20 @@ export function downloadCsv(filename, csvText) {
   window.setTimeout(() => {
     URL.revokeObjectURL(url);
   }, 200);
+}
+
+export function getPermissionsForRole(role, rolePermissions) {
+  return rolePermissions[role] ?? rolePermissions.viewer;
+}
+
+export function describeRole(role) {
+  if (role === 'admin') {
+    return 'Administrador';
+  }
+
+  if (role === 'editor') {
+    return 'Editor';
+  }
+
+  return 'Leitor';
 }

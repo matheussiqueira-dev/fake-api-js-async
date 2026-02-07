@@ -3,182 +3,313 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Painel frontend moderno para gestao de usuarios em API assincrona." />
-  <meta name="theme-color" content="#0c8f7a" />
-  <meta property="og:title" content="Fake API Async | Frontend Dashboard" />
-  <meta property="og:description" content="CRUD com filtros, analytics, UX avancada e acessibilidade." />
+  <meta name="description" content="Plataforma de operacao de cadastros com seguranca, auditoria e UX avancada." />
+  <meta name="theme-color" content="#0b5ec9" />
+  <meta property="og:title" content="Control Center | Fake API" />
+  <meta property="og:description" content="Gestao de usuarios com autenticacao, metricas e trilha de auditoria." />
   <meta property="og:type" content="website" />
-  <title>Fake API Async | Frontend Dashboard</title>
+  <title>Control Center | Fake API</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body data-density="comfortable">
-  <a class="skip-link" href="#mainContent">Pular para o conteudo principal</a>
+  <a class="skip-link" href="#mainContent">Pular para o conteudo</a>
 
-  <div class="atmosphere atmosphere--one" aria-hidden="true"></div>
-  <div class="atmosphere atmosphere--two" aria-hidden="true"></div>
+  <div class="noise noise--a" aria-hidden="true"></div>
+  <div class="noise noise--b" aria-hidden="true"></div>
 
-  <header class="topbar" aria-label="Cabecalho principal">
-    <div class="topbar__identity">
-      <p class="eyebrow">Frontend Experience</p>
-      <h1 class="title">Controle de Cadastros</h1>
-      <p class="subtitle">Fluxo otimizado para operacao diaria com foco em performance, acessibilidade e manutencao.</p>
-    </div>
-
-    <div class="topbar__actions">
-      <button id="densityToggleBtn" type="button" class="button button--ghost" aria-label="Alternar densidade visual">Modo compacto</button>
-      <div class="health-pill" id="healthStatus" role="status" aria-live="polite">Conectando...</div>
-    </div>
-  </header>
-
-  <main id="mainContent" class="layout" tabindex="-1">
-    <section class="panel panel--main" aria-labelledby="usersHeading">
-      <div class="panel__header">
-        <h2 id="usersHeading">Usuarios</h2>
-        <div class="panel__header-actions">
-          <button class="button button--ghost" id="clearFiltersBtn" type="button">Limpar filtros</button>
-          <button class="button" id="refreshBtn" type="button">Atualizar</button>
-        </div>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Navegacao principal">
+      <div class="brand">
+        <p class="brand__eyebrow">UX Control Suite</p>
+        <h1 class="brand__title">Customer Ops Hub</h1>
+        <p class="brand__subtitle">Plataforma orientada a produtividade, seguranca e governanca.</p>
       </div>
 
-      <form class="toolbar" id="filtersForm" aria-label="Filtros de busca">
-        <label class="field">
-          <span>Buscar</span>
-          <input id="searchInput" name="search" type="search" placeholder="Nome ou email" autocomplete="off" />
-          <small class="field-hint">Atalho: Ctrl+K</small>
-        </label>
+      <nav class="nav" aria-label="Secoes">
+        <button class="nav__item is-active" data-view-target="operations" type="button">Operacao</button>
+        <button class="nav__item" data-view-target="audit" type="button">Auditoria</button>
+      </nav>
 
-        <label class="field">
-          <span>Ordenar por</span>
-          <select id="sortBySelect" name="sortBy">
-            <option value="name">Nome</option>
-            <option value="email">Email</option>
-            <option value="id">ID</option>
-            <option value="createdAt">Data de cadastro</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span>Ordem</span>
-          <select id="sortOrderSelect" name="sortOrder">
-            <option value="asc">Ascendente</option>
-            <option value="desc">Descendente</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span>Itens por pagina</span>
-          <select id="limitSelect" name="limit">
-            <option value="4">4</option>
-            <option value="6">6</option>
-            <option value="10">10</option>
-          </select>
-        </label>
-
-        <div class="toolbar__actions">
-          <button id="exportCsvBtn" type="button" class="button button--ghost">Exportar CSV</button>
-        </div>
-      </form>
-
-      <p class="feedback" id="feedback" role="status" aria-live="polite"></p>
-
-      <div class="table-shell" id="usersRegion" aria-live="polite" aria-busy="false">
-        <div class="table-wrap" id="tableWrap">
-          <table>
-            <caption class="sr-only">Tabela de usuarios cadastrados</caption>
-            <thead>
-              <tr>
-                <th scope="col">ID</th>
-                <th scope="col">Nome</th>
-                <th scope="col">Email</th>
-                <th scope="col">Criado em</th>
-                <th scope="col">Acoes</th>
-              </tr>
-            </thead>
-            <tbody id="usersTableBody"></tbody>
-          </table>
-        </div>
-
-        <div class="cards-grid" id="usersCards"></div>
-      </div>
-
-      <div class="pagination" aria-label="Paginacao">
-        <button id="prevPageBtn" type="button" class="button button--ghost">Anterior</button>
-        <p id="paginationLabel">Pagina 1 de 1</p>
-        <button id="nextPageBtn" type="button" class="button button--ghost">Proxima</button>
-      </div>
-    </section>
-
-    <aside class="panel panel--side" aria-label="Resumo e formulario">
-      <section class="widget" aria-labelledby="statsHeading">
-        <div class="panel__header panel__header--tight">
-          <h2 id="statsHeading">Resumo operacional</h2>
-        </div>
-
-        <div class="metric-grid">
-          <article class="metric-card">
-            <h3>Total de usuarios</h3>
-            <p id="totalUsersValue">0</p>
-          </article>
-
-          <article class="metric-card">
-            <h3>Dominio lider</h3>
-            <p id="topDomainValue">-</p>
-          </article>
-        </div>
-
-        <div class="stacked-list">
-          <h3>Top dominios</h3>
-          <ul id="domainList"></ul>
-        </div>
-
-        <div class="stacked-list">
-          <h3>Cadastros recentes</h3>
-          <ul id="recentList"></ul>
-        </div>
+      <section class="session-card" aria-labelledby="sessionTitle">
+        <h2 id="sessionTitle">Sessao atual</h2>
+        <p><strong>Usuario:</strong> <span id="sessionUsername">-</span></p>
+        <p><strong>Papel:</strong> <span id="sessionRole">-</span></p>
+        <button id="logoutBtn" class="button button--ghost button--block" type="button">Encerrar sessao</button>
       </section>
 
-      <section class="widget" aria-labelledby="formHeading">
-        <div class="panel__header panel__header--tight">
-          <h2 id="formHeading">Novo cadastro</h2>
-          <span id="formModeTag" class="tag">Modo criacao</span>
-        </div>
-
-        <form id="userForm" novalidate>
-          <input id="editingId" type="hidden" />
-
-          <p id="formHint" class="form-hint">Preencha os campos para criar ou editar um usuario.</p>
-
-          <label class="field">
-            <span>Nome</span>
-            <input id="nameInput" name="name" type="text" minlength="2" maxlength="80" required autocomplete="name" aria-describedby="nameError" />
-            <small id="nameError" class="error-text"></small>
-          </label>
-
-          <label class="field">
-            <span>Email</span>
-            <input id="emailInput" name="email" type="email" required autocomplete="email" aria-describedby="emailError" />
-            <small id="emailError" class="error-text"></small>
-          </label>
-
-          <div class="form-actions">
-            <button id="submitBtn" type="submit" class="button">Salvar usuario</button>
-            <button id="cancelEditBtn" type="button" class="button button--ghost is-hidden">Cancelar edicao</button>
-          </div>
-        </form>
+      <section class="hint-card" aria-label="Atalhos">
+        <h2>Atalhos</h2>
+        <ul>
+          <li><kbd>Ctrl</kbd> + <kbd>K</kbd> Buscar usuarios</li>
+          <li><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd> Atualizar dados</li>
+        </ul>
       </section>
     </aside>
-  </main>
+
+    <main id="mainContent" class="workspace" tabindex="-1">
+      <header class="workspace__header">
+        <div>
+          <p class="workspace__eyebrow">Operations Console</p>
+          <h2 class="workspace__title">Painel de Cadastros</h2>
+          <p class="workspace__description">Fluxo otimizado para administracao de usuarios, compliance e monitoramento operacional.</p>
+        </div>
+
+        <div class="workspace__actions">
+          <button id="densityToggleBtn" class="button button--ghost" type="button">Modo compacto</button>
+          <button id="refreshBtn" class="button" type="button">Atualizar</button>
+          <div id="healthStatus" class="status-pill" role="status" aria-live="polite">Conectando...</div>
+        </div>
+      </header>
+
+      <section id="authGate" class="auth-gate" aria-labelledby="loginHeading">
+        <div class="auth-gate__panel">
+          <div>
+            <p class="auth-gate__eyebrow">Acesso seguro</p>
+            <h2 id="loginHeading">Entrar na plataforma</h2>
+            <p>Autenticacao obrigatoria para acessar dados de usuarios, trilha de auditoria e metricas internas.</p>
+          </div>
+
+          <form id="loginForm" class="auth-form" novalidate>
+            <label class="field">
+              <span>Usuario</span>
+              <input id="loginUsername" type="text" autocomplete="username" required />
+              <small id="loginUsernameError" class="error-text"></small>
+            </label>
+
+            <label class="field">
+              <span>Senha</span>
+              <input id="loginPassword" type="password" autocomplete="current-password" required />
+              <small id="loginPasswordError" class="error-text"></small>
+            </label>
+
+            <button id="loginSubmitBtn" class="button button--block" type="submit">Acessar painel</button>
+          </form>
+
+          <div class="auth-credentials">
+            <h3>Credenciais de ambiente local</h3>
+            <ul>
+              <li><strong>admin</strong> / Admin@123</li>
+              <li><strong>editor</strong> / Editor@123</li>
+              <li><strong>viewer</strong> / Viewer@123</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="appContent" class="app-content is-hidden">
+        <div class="overview-cards" aria-label="Indicadores principais">
+          <article class="overview-card">
+            <h3>Total de usuarios</h3>
+            <p id="totalUsersValue">0</p>
+            <small id="activeUsersLabel">Ativos: 0</small>
+          </article>
+
+          <article class="overview-card">
+            <h3>Usuarios removidos</h3>
+            <p id="deletedUsersValue">0</p>
+            <small>Exclusao logica com restore</small>
+          </article>
+
+          <article class="overview-card">
+            <h3>Dominio predominante</h3>
+            <p id="topDomainValue">-</p>
+            <small id="topDomainCount">0 ocorrencias</small>
+          </article>
+
+          <article class="overview-card">
+            <h3>Latencia media API</h3>
+            <p id="avgLatencyValue">-</p>
+            <small id="requestCountValue">0 requests</small>
+          </article>
+        </div>
+
+        <section class="view is-active" data-view="operations" aria-label="Operacao de usuarios">
+          <div class="operations-grid">
+            <section class="card card--main" aria-labelledby="usersHeading">
+              <div class="card__header">
+                <h3 id="usersHeading">Base de usuarios</h3>
+                <div class="card__header-actions">
+                  <button id="clearFiltersBtn" type="button" class="button button--ghost">Limpar filtros</button>
+                  <button id="exportCsvBtn" type="button" class="button button--ghost">Exportar CSV</button>
+                </div>
+              </div>
+
+              <form id="filtersForm" class="filters" aria-label="Filtros de usuarios">
+                <label class="field">
+                  <span>Buscar</span>
+                  <input id="searchInput" type="search" placeholder="Nome ou email" autocomplete="off" />
+                </label>
+
+                <label class="field">
+                  <span>Ordenar por</span>
+                  <select id="sortBySelect">
+                    <option value="name">Nome</option>
+                    <option value="email">Email</option>
+                    <option value="id">ID</option>
+                    <option value="createdAt">Criado em</option>
+                    <option value="updatedAt">Atualizado em</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Ordem</span>
+                  <select id="sortOrderSelect">
+                    <option value="asc">Ascendente</option>
+                    <option value="desc">Descendente</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Itens por pagina</span>
+                  <select id="limitSelect">
+                    <option value="4">4</option>
+                    <option value="6">6</option>
+                    <option value="10">10</option>
+                  </select>
+                </label>
+
+                <label class="field field--toggle" id="includeDeletedField">
+                  <span>Incluir removidos</span>
+                  <input id="includeDeletedInput" type="checkbox" />
+                </label>
+              </form>
+
+              <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+
+              <div id="usersRegion" class="table-shell" aria-live="polite" aria-busy="false">
+                <div class="table-wrap">
+                  <table>
+                    <caption class="sr-only">Tabela de usuarios</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">ID</th>
+                        <th scope="col">Nome</th>
+                        <th scope="col">Email</th>
+                        <th scope="col">Atualizado</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Acoes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="usersTableBody"></tbody>
+                  </table>
+                </div>
+
+                <div id="usersCards" class="cards-grid"></div>
+              </div>
+
+              <div class="pagination" aria-label="Paginacao de usuarios">
+                <button id="prevPageBtn" class="button button--ghost" type="button">Anterior</button>
+                <p id="paginationLabel">Pagina 1 de 1</p>
+                <button id="nextPageBtn" class="button button--ghost" type="button">Proxima</button>
+              </div>
+            </section>
+
+            <aside class="side-stack">
+              <section class="card" aria-labelledby="formHeading">
+                <div class="card__header card__header--tight">
+                  <h3 id="formHeading">Novo cadastro</h3>
+                  <span id="formModeTag" class="tag">Modo criacao</span>
+                </div>
+
+                <p id="permissionHint" class="permission-hint">Seu perfil permite gerenciar cadastros.</p>
+
+                <form id="userForm" novalidate>
+                  <input id="editingId" type="hidden" />
+
+                  <label class="field">
+                    <span>Nome</span>
+                    <input id="nameInput" type="text" minlength="2" maxlength="80" required autocomplete="name" aria-describedby="nameError" />
+                    <small id="nameError" class="error-text"></small>
+                  </label>
+
+                  <label class="field">
+                    <span>Email</span>
+                    <input id="emailInput" type="email" required autocomplete="email" aria-describedby="emailError" />
+                    <small id="emailError" class="error-text"></small>
+                  </label>
+
+                  <div class="form-actions">
+                    <button id="submitBtn" class="button button--block" type="submit">Salvar usuario</button>
+                    <button id="cancelEditBtn" class="button button--ghost button--block is-hidden" type="button">Cancelar edicao</button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="card" aria-labelledby="domainHeading">
+                <div class="card__header card__header--tight">
+                  <h3 id="domainHeading">Distribuicao de dominios</h3>
+                </div>
+                <ul id="domainList" class="stack-list"></ul>
+              </section>
+
+              <section class="card" aria-labelledby="recentHeading">
+                <div class="card__header card__header--tight">
+                  <h3 id="recentHeading">Cadastros recentes</h3>
+                </div>
+                <ul id="recentList" class="stack-list"></ul>
+              </section>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" data-view="audit" aria-label="Auditoria e observabilidade">
+          <div class="audit-grid">
+            <section class="card card--main" aria-labelledby="auditHeading">
+              <div class="card__header">
+                <h3 id="auditHeading">Trilha de auditoria</h3>
+                <button id="refreshAuditBtn" class="button button--ghost" type="button">Atualizar auditoria</button>
+              </div>
+
+              <p id="auditFeedback" class="feedback" role="status" aria-live="polite"></p>
+
+              <div class="table-shell" id="auditRegion" aria-busy="false" aria-live="polite">
+                <div class="table-wrap">
+                  <table>
+                    <caption class="sr-only">Eventos de auditoria</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Data</th>
+                        <th scope="col">Acao</th>
+                        <th scope="col">Ator</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Detalhes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="auditTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="pagination" aria-label="Paginacao de auditoria">
+                <button id="prevAuditBtn" class="button button--ghost" type="button">Anterior</button>
+                <p id="auditPaginationLabel">Pagina 1 de 1</p>
+                <button id="nextAuditBtn" class="button button--ghost" type="button">Proxima</button>
+              </div>
+            </section>
+
+            <aside class="side-stack">
+              <section class="card" aria-labelledby="metricsHeading">
+                <div class="card__header card__header--tight">
+                  <h3 id="metricsHeading">Metricas da API</h3>
+                </div>
+                <ul id="metricsList" class="stack-list"></ul>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
 
   <dialog id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmText">
-    <h2 id="confirmTitle">Confirmar exclusao</h2>
-    <p id="confirmText">Deseja remover este usuario?</p>
-
+    <h2 id="confirmTitle">Confirmar acao</h2>
+    <p id="confirmText">Deseja executar esta acao?</p>
     <div class="dialog-actions">
-      <button id="cancelDeleteBtn" type="button" class="button button--ghost">Cancelar</button>
-      <button id="confirmDeleteBtn" type="button" class="button button--danger">Excluir</button>
+      <button id="cancelDeleteBtn" class="button button--ghost" type="button">Cancelar</button>
+      <button id="confirmDeleteBtn" class="button button--danger" type="button">Confirmar</button>
     </div>
   </dialog>
 

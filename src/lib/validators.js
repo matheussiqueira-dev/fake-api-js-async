@@ -2,6 +2,7 @@ const { ValidationError } = require('./errors');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_PATTERN = /^[a-zA-Z0-9._-]{3,40}$/;
+const IDEMPOTENCY_KEY_PATTERN = /^[a-zA-Z0-9._:-]{8,128}$/;
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -128,11 +129,36 @@ function validateLoginPayload(input) {
   };
 }
 
+function validateRefreshTokenPayload(input) {
+  const refreshToken = normalizeString(input?.refreshToken);
+
+  if (!refreshToken || refreshToken.split('.').length !== 3) {
+    throw new ValidationError('refreshToken is required and must be a valid JWT string.');
+  }
+
+  return { refreshToken };
+}
+
+function validateIdempotencyKey(value) {
+  const key = normalizeString(value);
+  if (!key) {
+    return null;
+  }
+
+  if (!IDEMPOTENCY_KEY_PATTERN.test(key)) {
+    throw new ValidationError('Idempotency-Key header must contain 8-128 valid characters.');
+  }
+
+  return key;
+}
+
 module.exports = {
   validateId,
   validateUserPayload,
   validateBulkUserPayload,
   validateListQuery,
   validateLoginPayload,
+  validateRefreshTokenPayload,
+  validateIdempotencyKey,
   normalizeBoolean
 };

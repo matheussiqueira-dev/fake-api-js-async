@@ -12,7 +12,12 @@ const APP_CONFIG = Object.freeze({
     issuer: 'fake-api-js-async',
     audience: 'fake-api-dashboard',
     tokenTtlSeconds: Number.parseInt(process.env.AUTH_TOKEN_TTL_SECONDS ?? '7200', 10),
+    refreshTokenTtlSeconds: Number.parseInt(process.env.AUTH_REFRESH_TOKEN_TTL_SECONDS ?? '604800', 10),
     secret: process.env.AUTH_SECRET ?? 'change-this-in-production-secret',
+    maxFailedLoginAttempts: Number.parseInt(process.env.AUTH_MAX_FAILED_LOGIN_ATTEMPTS ?? '5', 10),
+    failedLoginWindowMs: Number.parseInt(process.env.AUTH_FAILED_LOGIN_WINDOW_MS ?? '900000', 10),
+    loginLockDurationMs: Number.parseInt(process.env.AUTH_LOGIN_LOCK_DURATION_MS ?? '900000', 10),
+    maxSessionsPerUser: Number.parseInt(process.env.AUTH_MAX_SESSIONS_PER_USER ?? '5', 10),
     users: [
       {
         id: 1,
@@ -40,6 +45,14 @@ const APP_CONFIG = Object.freeze({
   rateLimit: {
     windowMs: Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? '60000', 10),
     maxRequests: Number.parseInt(process.env.RATE_LIMIT_MAX_REQUESTS ?? '120', 10)
+  },
+  loginRateLimit: {
+    windowMs: Number.parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS ?? '60000', 10),
+    maxRequests: Number.parseInt(process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS ?? '15', 10)
+  },
+  idempotency: {
+    ttlMs: Number.parseInt(process.env.IDEMPOTENCY_TTL_MS ?? '300000', 10),
+    maxEntries: Number.parseInt(process.env.IDEMPOTENCY_MAX_ENTRIES ?? '2000', 10)
   },
   cors: {
     allowedOrigins: (process.env.ALLOWED_ORIGINS ?? 'http://127.0.0.1:3333,http://localhost:3333')

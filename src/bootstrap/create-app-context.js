@@ -4,12 +4,25 @@ const { MetricsRegistry } = require('../monitoring/metrics-registry');
 const { RequestLogger } = require('../monitoring/request-logger');
 const { RateLimiter } = require('../security/rate-limiter');
 const { TokenService } = require('../security/token-service');
-const { AuthService } = require('../services/auth-service');
 const { AuditService } = require('../services/audit-service');
+const { AuthService } = require('../services/auth-service');
+const { IdempotencyService } = require('../services/idempotency-service');
+const { LoginAttemptService, SessionService } = require('../services/session-service');
 const { UserService } = require('../services/user-service');
 
 function createAppContext() {
   const tokenService = new TokenService(APP_CONFIG.auth);
+
+  const sessionService = new SessionService({
+    tokenService,
+    maxSessionsPerUser: APP_CONFIG.auth.maxSessionsPerUser
+  });
+
+  const loginAttemptService = new LoginAttemptService({
+    maxFailedAttempts: APP_CONFIG.auth.maxFailedLoginAttempts,
+    failedWindowMs: APP_CONFIG.auth.failedLoginWindowMs,
+    lockDurationMs: APP_CONFIG.auth.loginLockDurationMs
+  });
 
   return {
     appConfig: APP_CONFIG,
@@ -21,6 +34,8 @@ function createAppContext() {
     }),
     authService: new AuthService({
       tokenService,
+      sessionService,
+      loginAttemptService,
       accounts: APP_CONFIG.auth.users
     }),
     auditService: new AuditService({
@@ -28,6 +43,8 @@ function createAppContext() {
     }),
     metricsRegistry: new MetricsRegistry(),
     rateLimiter: new RateLimiter(APP_CONFIG.rateLimit),
+    loginRateLimiter: new RateLimiter(APP_CONFIG.loginRateLimit),
+    idempotencyService: new IdempotencyService(APP_CONFIG.idempotency),
     logger: new RequestLogger()
   };
 }

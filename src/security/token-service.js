@@ -26,34 +26,32 @@ class TokenService {
     this.issuer = options.issuer;
     this.audience = options.audience;
     this.tokenTtlSeconds = options.tokenTtlSeconds;
+    this.refreshTokenTtlSeconds = options.refreshTokenTtlSeconds;
   }
 
-  issueToken(payload) {
-    const now = Math.floor(Date.now() / 1000);
-
-    const header = {
-      alg: 'HS256',
-      typ: 'JWT'
-    };
-
-    const body = {
-      sub: String(payload.userId),
-      username: payload.username,
-      role: payload.role,
-      iat: now,
-      exp: now + this.tokenTtlSeconds,
-      iss: this.issuer,
-      aud: this.audience
-    };
-
-    const encodedHeader = base64UrlEncode(JSON.stringify(header));
-    const encodedBody = base64UrlEncode(JSON.stringify(body));
-    const signature = this.#createSignature(`${encodedHeader}.${encodedBody}`);
-
-    return `${encodedHeader}.${encodedBody}.${signature}`;
+  issueAccessToken(payload) {
+    return this.#issueToken(payload, {
+      tokenType: 'access',
+      ttlSeconds: this.tokenTtlSeconds
+    });
   }
 
-  verifyToken(token) {
+  issueRefreshToken(payload) {
+    return this.#issueToken(payload, {
+      tokenType: 'refresh',
+      ttlSeconds: this.refreshTokenTtlSeconds
+    });
+  }
+
+  verifyAccessToken(token) {
+    return this.verifyToken(token, { expectedType: 'access' });
+  }
+
+  verifyRefreshToken(token) {
+    return this.verifyToken(token, { expectedType: 'refresh' });
+  }
+
+  verifyToken(token, options = {}) {
     if (!token || typeof token !== 'string') {
       throw new UnauthorizedError('Invalid access token.');
     }
@@ -70,7 +68,12 @@ class TokenService {
       throw new UnauthorizedError('Invalid access token signature.');
     }
 
-    const payload = JSON.parse(base64UrlDecode(encodedBody));
+    let payload = null;
+    try {
+      payload = JSON.parse(base64UrlDecode(encodedBody));
+    } catch {
+      throw new UnauthorizedError('Invalid access token payload.');
+    }
     const now = Math.floor(Date.now() / 1000);
 
     if (payload.iss !== this.issuer || payload.aud !== this.audience) {
@@ -81,7 +84,45 @@ class TokenService {
       throw new UnauthorizedError('Access token expired.');
     }
 
+    if (payload.iat > now + 10) {
+      throw new UnauthorizedError('Token issue time is invalid.');
+    }
+
+    if (options.expectedType && payload.tokenType !== options.expectedType) {
+      throw new UnauthorizedError('Token type is invalid for this operation.');
+    }
+
     return payload;
+  }
+
+  #issueToken(payload, options) {
+    const now = Math.floor(Date.now() / 1000);
+
+    const header = {
+      alg: 'HS256',
+      typ: 'JWT'
+    };
+
+    const body = {
+      sub: String(payload.userId),
+      username: payload.username,
+      role: payload.role,
+      tokenType: options.tokenType,
+      jti: crypto.randomUUID(),
+      iat: now,
+      exp: now + options.ttlSeconds,
+      iss: this.issuer,
+      aud: this.audience
+    };
+
+    const encodedHeader = base64UrlEncode(JSON.stringify(header));
+    const encodedBody = base64UrlEncode(JSON.stringify(body));
+    const signature = this.#createSignature(`${encodedHeader}.${encodedBody}`);
+
+    return {
+      token: `${encodedHeader}.${encodedBody}.${signature}`,
+      payload: body
+    };
   }
 
   #createSignature(content) {

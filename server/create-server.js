@@ -10,6 +10,7 @@ const {
   UnauthorizedError,
   ValidationError
 } = require('../src/lib/errors');
+const { validateIdempotencyKey, validateRefreshTokenPayload } = require('../src/lib/validators');
 
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
 const STARTED_AT = Date.now();
@@ -41,6 +42,7 @@ function createServer(context) {
       pathname,
       url,
       ip: getClientIp(request),
+      userAgent: request.headers['user-agent'] ?? null,
       statusCode: 500,
       route: 'unmatched',
       authUser: null,
@@ -63,7 +65,11 @@ function createServer(context) {
       }
 
       if (isApiRoute) {
-        applyRateLimit(context, requestContext, response);
+        applyRateLimit(context.rateLimiter, requestContext, response, 'X-RateLimit');
+
+        if (pathname === '/api/v1/auth/login') {
+          applyRateLimit(context.loginRateLimiter, requestContext, response, 'X-Login-RateLimit');
+        }
       }
 
       await withTimeout(handleRequest(context, request, response, requestContext), context.appConfig.requestTimeoutMs);
@@ -111,6 +117,8 @@ function assertRequiredContext(context) {
     'auditService',
     'metricsRegistry',
     'rateLimiter',
+    'loginRateLimiter',
+    'idempotencyService',
     'logger'
   ];
 
@@ -176,17 +184,38 @@ async function handleLegacyApi(context, request, response, requestContext) {
     requestContext.route = 'POST /api/users';
 
     const body = await readJsonBody(request, context.appConfig.maxBodyBytes);
-    const result = await context.userService.createUser(body);
+    const operation = await executeIdempotentWrite({
+      context,
+      request,
+      requestContext,
+      scope: 'legacy.user.create',
+      actor: 'anonymous',
+      body,
+      execute: async () => {
+        const created = await context.userService.createUser(body);
+        return {
+          statusCode: 201,
+          data: created
+        };
+      }
+    });
+
+    if (operation.idempotencyKey) {
+      response.setHeader('Idempotency-Key', operation.idempotencyKey);
+      if (operation.replayed) {
+        response.setHeader('Idempotency-Replayed', 'true');
+      }
+    }
 
     context.auditService.record({
       action: 'legacy.user.create',
       actor: 'anonymous',
       requestId: requestContext.requestId,
-      metadata: { userId: result.id }
+      metadata: { userId: operation.data.id, replayed: operation.replayed }
     });
 
-    requestContext.statusCode = 201;
-    sendJson(response, 201, result);
+    requestContext.statusCode = operation.statusCode;
+    sendJson(response, operation.statusCode, operation.data);
     return;
   }
 
@@ -255,17 +284,12 @@ async function handleApiV1(context, request, response, requestContext) {
     requestContext.route = 'GET /api/v1/health';
     requestContext.statusCode = 200;
 
-    sendJson(response, 200, {
-      data: {
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        uptimeSeconds: Math.floor((Date.now() - STARTED_AT) / 1000),
-        version: 'v1'
-      },
-      meta: {
-        requestId: requestContext.requestId
-      }
-    });
+    sendV1(response, 200, {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptimeSeconds: Math.floor((Date.now() - STARTED_AT) / 1000),
+      version: 'v1'
+    }, requestContext.requestId);
     return;
   }
 
@@ -273,7 +297,10 @@ async function handleApiV1(context, request, response, requestContext) {
     requestContext.route = 'POST /api/v1/auth/login';
 
     const body = await readJsonBody(request, context.appConfig.maxBodyBytes);
-    const authResult = context.authService.login(body);
+    const authResult = context.authService.login(body, {
+      ip: requestContext.ip,
+      userAgent: requestContext.userAgent
+    });
 
     context.auditService.record({
       action: 'auth.login',
@@ -283,12 +310,50 @@ async function handleApiV1(context, request, response, requestContext) {
     });
 
     requestContext.statusCode = 200;
-    sendJson(response, 200, {
-      data: authResult,
-      meta: {
-        requestId: requestContext.requestId
-      }
+    sendV1(response, 200, authResult, requestContext.requestId);
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/v1/auth/refresh') {
+    requestContext.route = 'POST /api/v1/auth/refresh';
+
+    const body = await readJsonBody(request, context.appConfig.maxBodyBytes);
+    const { refreshToken } = validateRefreshTokenPayload(body);
+
+    const result = context.authService.refresh(refreshToken, {
+      ip: requestContext.ip,
+      userAgent: requestContext.userAgent
     });
+
+    context.auditService.record({
+      action: 'auth.refresh',
+      actor: result.user.username,
+      requestId: requestContext.requestId,
+      metadata: { role: result.user.role }
+    });
+
+    requestContext.statusCode = 200;
+    sendV1(response, 200, result, requestContext.requestId);
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/v1/auth/logout') {
+    requestContext.route = 'POST /api/v1/auth/logout';
+
+    const body = await readJsonBody(request, context.appConfig.maxBodyBytes);
+    const { refreshToken } = validateRefreshTokenPayload(body);
+
+    const result = context.authService.logout(refreshToken);
+
+    context.auditService.record({
+      action: 'auth.logout',
+      actor: result.username ?? 'unknown',
+      requestId: requestContext.requestId,
+      metadata: { reason: result.reason, revoked: result.revoked }
+    });
+
+    requestContext.statusCode = 200;
+    sendV1(response, 200, result, requestContext.requestId);
     return;
   }
 
@@ -299,17 +364,21 @@ async function handleApiV1(context, request, response, requestContext) {
     requestContext.route = 'GET /api/v1/auth/me';
     requestContext.statusCode = 200;
 
-    sendJson(response, 200, {
-      data: {
-        id: authUser.id,
-        username: authUser.username,
-        role: authUser.role,
-        displayName: authUser.displayName
-      },
-      meta: {
-        requestId: requestContext.requestId
-      }
-    });
+    sendV1(response, 200, {
+      id: authUser.id,
+      username: authUser.username,
+      role: authUser.role,
+      displayName: authUser.displayName
+    }, requestContext.requestId);
+    return;
+  }
+
+  if (method === 'GET' && pathname === '/api/v1/auth/session-stats') {
+    requestContext.route = 'GET /api/v1/auth/session-stats';
+    assertRole(authUser, 'admin');
+
+    requestContext.statusCode = 200;
+    sendV1(response, 200, context.authService.getSessionStats(), requestContext.requestId);
     return;
   }
 
@@ -333,13 +402,7 @@ async function handleApiV1(context, request, response, requestContext) {
     });
 
     requestContext.statusCode = 200;
-    sendJson(response, 200, {
-      data: result.data,
-      meta: {
-        ...result.meta,
-        requestId: requestContext.requestId
-      }
-    });
+    sendV1(response, 200, result.data, requestContext.requestId, result.meta);
     return;
   }
 
@@ -348,22 +411,39 @@ async function handleApiV1(context, request, response, requestContext) {
     assertRole(authUser, 'editor');
 
     const body = await readJsonBody(request, context.appConfig.maxBodyBytes);
-    const created = await context.userService.createUser(body);
+
+    const operation = await executeIdempotentWrite({
+      context,
+      request,
+      requestContext,
+      scope: 'v1.user.create',
+      actor: authUser.username,
+      body,
+      execute: async () => {
+        const created = await context.userService.createUser(body);
+        return {
+          statusCode: 201,
+          data: created
+        };
+      }
+    });
+
+    if (operation.idempotencyKey) {
+      response.setHeader('Idempotency-Key', operation.idempotencyKey);
+      if (operation.replayed) {
+        response.setHeader('Idempotency-Replayed', 'true');
+      }
+    }
 
     context.auditService.record({
       action: 'user.create',
       actor: authUser.username,
       requestId: requestContext.requestId,
-      metadata: { userId: created.id }
+      metadata: { userId: operation.data.id, replayed: operation.replayed }
     });
 
-    requestContext.statusCode = 201;
-    sendJson(response, 201, {
-      data: created,
-      meta: {
-        requestId: requestContext.requestId
-      }
-    });
+    requestContext.statusCode = operation.statusCode;
+    sendV1(response, operation.statusCode, operation.data, requestContext.requestId);
     return;
   }
 
@@ -377,23 +457,42 @@ async function handleApiV1(context, request, response, requestContext) {
       throw new ValidationError('Body must contain users array.');
     }
 
-    const skipDuplicates = body.skipDuplicates !== false;
-    const result = await context.userService.bulkCreateUsers(body.users, { skipDuplicates });
+    const operation = await executeIdempotentWrite({
+      context,
+      request,
+      requestContext,
+      scope: 'v1.user.bulk_create',
+      actor: authUser.username,
+      body,
+      execute: async () => {
+        const skipDuplicates = body.skipDuplicates !== false;
+        const result = await context.userService.bulkCreateUsers(body.users, { skipDuplicates });
+        return {
+          statusCode: 201,
+          data: result
+        };
+      }
+    });
+
+    if (operation.idempotencyKey) {
+      response.setHeader('Idempotency-Key', operation.idempotencyKey);
+      if (operation.replayed) {
+        response.setHeader('Idempotency-Replayed', 'true');
+      }
+    }
 
     context.auditService.record({
       action: 'user.bulk_create',
       actor: authUser.username,
       requestId: requestContext.requestId,
-      metadata: result.summary
-    });
-
-    requestContext.statusCode = 201;
-    sendJson(response, 201, {
-      data: result,
-      meta: {
-        requestId: requestContext.requestId
+      metadata: {
+        ...operation.data.summary,
+        replayed: operation.replayed
       }
     });
+
+    requestContext.statusCode = operation.statusCode;
+    sendV1(response, operation.statusCode, operation.data, requestContext.requestId);
     return;
   }
 
@@ -408,12 +507,7 @@ async function handleApiV1(context, request, response, requestContext) {
     const result = await context.userService.getStats({ includeDeleted });
 
     requestContext.statusCode = 200;
-    sendJson(response, 200, {
-      data: result,
-      meta: {
-        requestId: requestContext.requestId
-      }
-    });
+    sendV1(response, 200, result, requestContext.requestId);
     return;
   }
 
@@ -427,13 +521,7 @@ async function handleApiV1(context, request, response, requestContext) {
     const result = context.auditService.list({ page, limit });
 
     requestContext.statusCode = 200;
-    sendJson(response, 200, {
-      data: result.data,
-      meta: {
-        ...result.meta,
-        requestId: requestContext.requestId
-      }
-    });
+    sendV1(response, 200, result.data, requestContext.requestId, result.meta);
     return;
   }
 
@@ -442,12 +530,7 @@ async function handleApiV1(context, request, response, requestContext) {
     assertRole(authUser, 'admin');
 
     requestContext.statusCode = 200;
-    sendJson(response, 200, {
-      data: context.metricsRegistry.snapshot(),
-      meta: {
-        requestId: requestContext.requestId
-      }
-    });
+    sendV1(response, 200, context.metricsRegistry.snapshot(), requestContext.requestId);
     return;
   }
 
@@ -466,12 +549,7 @@ async function handleApiV1(context, request, response, requestContext) {
     });
 
     requestContext.statusCode = 200;
-    sendJson(response, 200, {
-      data: restored,
-      meta: {
-        requestId: requestContext.requestId
-      }
-    });
+    sendV1(response, 200, restored, requestContext.requestId);
     return;
   }
 
@@ -490,12 +568,7 @@ async function handleApiV1(context, request, response, requestContext) {
       const result = await context.userService.getUserById(userId, { includeDeleted });
 
       requestContext.statusCode = 200;
-      sendJson(response, 200, {
-        data: result,
-        meta: {
-          requestId: requestContext.requestId
-        }
-      });
+      sendV1(response, 200, result, requestContext.requestId);
       return;
     }
 
@@ -514,12 +587,7 @@ async function handleApiV1(context, request, response, requestContext) {
       });
 
       requestContext.statusCode = 200;
-      sendJson(response, 200, {
-        data: updated,
-        meta: {
-          requestId: requestContext.requestId
-        }
-      });
+      sendV1(response, 200, updated, requestContext.requestId);
       return;
     }
 
@@ -537,12 +605,7 @@ async function handleApiV1(context, request, response, requestContext) {
       });
 
       requestContext.statusCode = 200;
-      sendJson(response, 200, {
-        data: deleted,
-        meta: {
-          requestId: requestContext.requestId
-        }
-      });
+      sendV1(response, 200, deleted, requestContext.requestId);
       return;
     }
   }
@@ -550,13 +613,58 @@ async function handleApiV1(context, request, response, requestContext) {
   throw routeNotFoundError(method, pathname);
 }
 
-function applyRateLimit(context, requestContext, response) {
-  const result = context.rateLimiter.consume(requestContext.ip);
+async function executeIdempotentWrite(options) {
+  const idempotencyKey = validateIdempotencyKey(options.request.headers['idempotency-key']);
+
+  if (!idempotencyKey) {
+    const execution = await options.execute();
+    return {
+      ...execution,
+      replayed: false,
+      idempotencyKey: null
+    };
+  }
+
+  const scopedKey = `${options.scope}:${options.actor}:${idempotencyKey}`;
+  const fingerprint = options.context.idempotencyService.buildFingerprint({
+    scope: options.scope,
+    actor: options.actor,
+    method: options.requestContext.method,
+    path: options.requestContext.pathname,
+    query: [...options.requestContext.url.searchParams.entries()].sort(),
+    body: options.body
+  });
+
+  const replay = options.context.idempotencyService.consume(scopedKey, fingerprint);
+  if (replay.replay) {
+    return {
+      ...replay.response,
+      replayed: true,
+      idempotencyKey
+    };
+  }
+
+  const execution = await options.execute();
+
+  options.context.idempotencyService.storeResponse(scopedKey, fingerprint, {
+    statusCode: execution.statusCode,
+    data: execution.data
+  });
+
+  return {
+    ...execution,
+    replayed: false,
+    idempotencyKey
+  };
+}
+
+function applyRateLimit(rateLimiter, requestContext, response, headerPrefix) {
+  const result = rateLimiter.consume(requestContext.ip);
 
   requestContext.rateLimitInfo = result;
-  response.setHeader('X-RateLimit-Limit', String(result.limit));
-  response.setHeader('X-RateLimit-Remaining', String(result.remaining));
-  response.setHeader('X-RateLimit-Reset', String(Math.floor(result.resetAt / 1000)));
+  response.setHeader(`${headerPrefix}-Limit`, String(result.limit));
+  response.setHeader(`${headerPrefix}-Remaining`, String(result.remaining));
+  response.setHeader(`${headerPrefix}-Reset`, String(Math.floor(result.resetAt / 1000)));
 
   if (!result.allowed) {
     response.setHeader('Retry-After', String(result.retryAfterSeconds));
@@ -598,7 +706,7 @@ function applyCorsHeaders(request, response, allowedOrigins) {
   response.setHeader('Access-Control-Allow-Origin', requestOrigin);
   response.setHeader('Vary', 'Origin');
   response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,Idempotency-Key');
   response.setHeader('Access-Control-Max-Age', '600');
 }
 
@@ -635,7 +743,9 @@ async function readJsonBody(request, maxBytes) {
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf-8'));
   } catch {
-    throw new ValidationError('Malformed JSON body.');
+    const error = new ValidationError('Malformed JSON body.');
+    error.code = 'MALFORMED_JSON';
+    throw error;
   }
 }
 
@@ -682,6 +792,16 @@ async function serveStaticFile(response, pathname) {
       route: `STATIC ${pathname}`
     };
   }
+}
+
+function sendV1(response, statusCode, data, requestId, meta = {}) {
+  sendJson(response, statusCode, {
+    data,
+    meta: {
+      ...meta,
+      requestId
+    }
+  });
 }
 
 function sendJson(response, statusCode, payload) {
@@ -765,14 +885,10 @@ function createOpenApiDocument() {
     openapi: '3.0.3',
     info: {
       title: 'Fake API JS Async',
-      version: '1.0.0',
-      description: 'Versioned backend API with RBAC, audit logs and metrics.'
+      version: '1.1.0',
+      description: 'Versioned backend API with RBAC, rotating refresh tokens, audit logs and metrics.'
     },
-    servers: [
-      {
-        url: '/api/v1'
-      }
-    ],
+    servers: [{ url: '/api/v1' }],
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -783,72 +899,26 @@ function createOpenApiDocument() {
       }
     },
     paths: {
-      '/health': {
-        get: { summary: 'Health check' }
-      },
-      '/auth/login': {
-        post: { summary: 'Authenticate and issue bearer token' }
-      },
-      '/auth/me': {
-        get: {
-          summary: 'Get authenticated user profile',
-          security: [{ bearerAuth: [] }]
-        }
-      },
+      '/health': { get: { summary: 'Health check' } },
+      '/auth/login': { post: { summary: 'Authenticate and issue access + refresh token' } },
+      '/auth/refresh': { post: { summary: 'Rotate refresh token and issue a new token bundle' } },
+      '/auth/logout': { post: { summary: 'Revoke refresh token session' } },
+      '/auth/me': { get: { summary: 'Get authenticated user profile', security: [{ bearerAuth: [] }] } },
+      '/auth/session-stats': { get: { summary: 'Get session stats (admin)', security: [{ bearerAuth: [] }] } },
       '/users': {
-        get: {
-          summary: 'List users with pagination and filters',
-          security: [{ bearerAuth: [] }]
-        },
-        post: {
-          summary: 'Create user (editor+)',
-          security: [{ bearerAuth: [] }]
-        }
+        get: { summary: 'List users', security: [{ bearerAuth: [] }] },
+        post: { summary: 'Create user (editor+)', security: [{ bearerAuth: [] }] }
       },
-      '/users/bulk': {
-        post: {
-          summary: 'Bulk create users (admin)',
-          security: [{ bearerAuth: [] }]
-        }
-      },
+      '/users/bulk': { post: { summary: 'Bulk create users (admin)', security: [{ bearerAuth: [] }] } },
       '/users/{id}': {
-        get: {
-          summary: 'Get user by id',
-          security: [{ bearerAuth: [] }]
-        },
-        put: {
-          summary: 'Update user (editor+)',
-          security: [{ bearerAuth: [] }]
-        },
-        delete: {
-          summary: 'Soft delete user (admin)',
-          security: [{ bearerAuth: [] }]
-        }
+        get: { summary: 'Get user by id', security: [{ bearerAuth: [] }] },
+        put: { summary: 'Update user (editor+)', security: [{ bearerAuth: [] }] },
+        delete: { summary: 'Soft delete user (admin)', security: [{ bearerAuth: [] }] }
       },
-      '/users/{id}/restore': {
-        post: {
-          summary: 'Restore soft deleted user (admin)',
-          security: [{ bearerAuth: [] }]
-        }
-      },
-      '/stats': {
-        get: {
-          summary: 'Get user statistics',
-          security: [{ bearerAuth: [] }]
-        }
-      },
-      '/audit-logs': {
-        get: {
-          summary: 'List audit events (admin)',
-          security: [{ bearerAuth: [] }]
-        }
-      },
-      '/metrics': {
-        get: {
-          summary: 'Get API metrics snapshot (admin)',
-          security: [{ bearerAuth: [] }]
-        }
-      }
+      '/users/{id}/restore': { post: { summary: 'Restore user (admin)', security: [{ bearerAuth: [] }] } },
+      '/stats': { get: { summary: 'Get user stats', security: [{ bearerAuth: [] }] } },
+      '/audit-logs': { get: { summary: 'List audit events (admin)', security: [{ bearerAuth: [] }] } },
+      '/metrics': { get: { summary: 'Get metrics snapshot (admin)', security: [{ bearerAuth: [] }] } }
     }
   };
 }

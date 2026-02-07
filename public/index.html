@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Painel moderno para gestao de usuarios em API assincrona fake." />
+  <title>Fake API Async | Painel de Cadastros</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="bg-shape bg-shape--a" aria-hidden="true"></div>
+  <div class="bg-shape bg-shape--b" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Sistema de cadastros</p>
+      <h1 class="title">Painel de Usuarios</h1>
+      <p class="subtitle">Gerencie usuarios com fluxo assicrono, seguro e escalavel.</p>
+    </div>
+    <div class="health" id="healthStatus" role="status" aria-live="polite">Conectando...</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel panel--list" aria-labelledby="usersHeading">
+      <div class="panel-header">
+        <h2 id="usersHeading">Base de usuarios</h2>
+        <button class="ghost-button" id="refreshBtn" type="button">Atualizar dados</button>
+      </div>
+
+      <form class="toolbar" id="filtersForm" aria-label="Filtros de usuarios">
+        <label class="field">
+          <span>Buscar</span>
+          <input id="searchInput" name="search" type="search" placeholder="Nome ou email" autocomplete="off" />
+        </label>
+
+        <label class="field">
+          <span>Ordenar por</span>
+          <select id="sortBySelect" name="sortBy">
+            <option value="name">Nome</option>
+            <option value="email">Email</option>
+            <option value="id">ID</option>
+            <option value="createdAt">Criado em</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Ordem</span>
+          <select id="sortOrderSelect" name="sortOrder">
+            <option value="asc">Ascendente</option>
+            <option value="desc">Descendente</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Itens por pagina</span>
+          <select id="limitSelect" name="limit">
+            <option value="4">4</option>
+            <option value="6" selected>6</option>
+            <option value="10">10</option>
+          </select>
+        </label>
+      </form>
+
+      <p class="feedback" id="feedback" role="status" aria-live="polite"></p>
+
+      <div class="table-wrap" aria-live="polite">
+        <table>
+          <caption class="sr-only">Lista de usuarios cadastrados</caption>
+          <thead>
+            <tr>
+              <th scope="col">ID</th>
+              <th scope="col">Nome</th>
+              <th scope="col">Email</th>
+              <th scope="col">Criado em</th>
+              <th scope="col">Acoes</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="mobile-cards" id="usersCards" aria-live="polite"></div>
+
+      <div class="pagination" aria-label="Paginacao de usuarios">
+        <button id="prevPageBtn" type="button">Pagina anterior</button>
+        <p id="paginationLabel">Pagina 1 de 1</p>
+        <button id="nextPageBtn" type="button">Proxima pagina</button>
+      </div>
+    </section>
+
+    <aside class="panel panel--side" aria-label="Formulario e indicadores">
+      <section class="stats" aria-labelledby="statsHeading">
+        <div class="panel-header">
+          <h2 id="statsHeading">Indicadores</h2>
+        </div>
+
+        <div class="stat-grid">
+          <article class="stat-card">
+            <h3>Total de usuarios</h3>
+            <p id="totalUsersValue">0</p>
+          </article>
+          <article class="stat-card">
+            <h3>Dominio principal</h3>
+            <p id="topDomainValue">-</p>
+          </article>
+        </div>
+
+        <div class="domain-list">
+          <h3>Top dominios</h3>
+          <ul id="domainList"></ul>
+        </div>
+
+        <div class="recent-list">
+          <h3>Ultimos cadastros</h3>
+          <ul id="recentList"></ul>
+        </div>
+      </section>
+
+      <section class="form-section" aria-labelledby="formHeading">
+        <div class="panel-header">
+          <h2 id="formHeading">Novo cadastro</h2>
+          <span class="tag" id="formModeTag">Modo criacao</span>
+        </div>
+
+        <form id="userForm" novalidate>
+          <input id="editingId" type="hidden" />
+
+          <label class="field">
+            <span>Nome</span>
+            <input id="nameInput" name="name" type="text" minlength="2" maxlength="80" required autocomplete="name" />
+            <small id="nameError" class="error-text"></small>
+          </label>
+
+          <label class="field">
+            <span>Email</span>
+            <input id="emailInput" name="email" type="email" required autocomplete="email" />
+            <small id="emailError" class="error-text"></small>
+          </label>
+
+          <div class="form-actions">
+            <button id="submitBtn" type="submit">Salvar usuario</button>
+            <button id="cancelEditBtn" type="button" class="ghost-button hidden">Cancelar edicao</button>
+          </div>
+        </form>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="confirmDialog" aria-labelledby="confirmTitle">
+    <h2 id="confirmTitle">Confirmar exclusao</h2>
+    <p id="confirmText">Deseja remover este usuario?</p>
+    <div class="dialog-actions">
+      <button id="cancelDeleteBtn" type="button" class="ghost-button">Cancelar</button>
+      <button id="confirmDeleteBtn" type="button">Excluir usuario</button>
+    </div>
+  </dialog>
+
+  <div id="toastRegion" class="toast-region" aria-live="assertive" aria-atomic="true"></div>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

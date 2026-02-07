@@ -271,3 +271,53 @@ test('v1 API supports idempotent user creation with Idempotency-Key', async () =
     });
   }
 });
+
+test('v1 audit logs support filtering and response includes request id header', async () => {
+  const { server, baseUrl } = await startServer();
+
+  try {
+    const login = await requestJson(baseUrl, '/api/v1/auth/login', {
+      method: 'POST',
+      body: {
+        username: 'admin',
+        password: 'Admin@123'
+      }
+    });
+
+    const token = login.payload.data.accessToken;
+
+    const created = await requestJson(baseUrl, '/api/v1/users', {
+      method: 'POST',
+      token,
+      body: {
+        name: 'Audit User',
+        email: 'audit.user@example.com'
+      }
+    });
+
+    assert.equal(created.response.status, 201);
+
+    const auditLogs = await requestJson(baseUrl, '/api/v1/audit-logs?action=user.create', {
+      token
+    });
+
+    assert.equal(auditLogs.response.status, 200);
+    assert.ok(Array.isArray(auditLogs.payload.data));
+    assert.ok(auditLogs.payload.data.some((entry) => entry.action === 'user.create'));
+
+    const health = await requestJson(baseUrl, '/api/v1/health');
+    assert.equal(health.response.status, 200);
+    assert.ok(typeof health.response.headers.get('X-Request-Id') === 'string');
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+});

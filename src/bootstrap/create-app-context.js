@@ -11,6 +11,10 @@ const { LoginAttemptService, SessionService } = require('../services/session-ser
 const { UserService } = require('../services/user-service');
 
 function createAppContext() {
+  if (APP_CONFIG.nodeEnv === 'production' && APP_CONFIG.auth.secret === 'change-this-in-production-secret') {
+    throw new Error('AUTH_SECRET must be set in production.');
+  }
+
   const tokenService = new TokenService(APP_CONFIG.auth);
 
   const sessionService = new SessionService({
@@ -39,7 +43,8 @@ function createAppContext() {
       accounts: APP_CONFIG.auth.users
     }),
     auditService: new AuditService({
-      maxEntries: APP_CONFIG.maxAuditEntries
+      maxEntries: APP_CONFIG.maxAuditEntries,
+      maxPageSize: APP_CONFIG.maxAuditPageSize
     }),
     metricsRegistry: new MetricsRegistry(),
     rateLimiter: new RateLimiter(APP_CONFIG.rateLimit),

@@ -111,6 +111,54 @@ function validateListQuery(query, defaults) {
   };
 }
 
+function parseDateFilter(value, label) {
+  const normalized = normalizeString(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const timestamp = Date.parse(normalized);
+  if (Number.isNaN(timestamp)) {
+    throw new ValidationError(`${label} must be a valid ISO date.`);
+  }
+
+  return new Date(timestamp).toISOString();
+}
+
+function validateAuditQuery(query, defaults) {
+  const page = Number.parseInt(String(query?.page ?? defaults.page), 10);
+  const limit = Number.parseInt(String(query?.limit ?? defaults.limit), 10);
+
+  const safePage = Number.isInteger(page) && page > 0 ? page : defaults.page;
+  const safeLimit = Number.isInteger(limit) && limit > 0
+    ? Math.min(limit, defaults.maxLimit)
+    : defaults.limit;
+
+  const search = normalizeString(query?.search);
+  const action = normalizeString(query?.action);
+  const actor = normalizeString(query?.actor);
+  const status = normalizeString(query?.status);
+  const requestId = normalizeString(query?.requestId);
+  const since = parseDateFilter(query?.since, 'since');
+  const until = parseDateFilter(query?.until, 'until');
+
+  if (since && until && Date.parse(since) > Date.parse(until)) {
+    throw new ValidationError('since must be earlier than until.');
+  }
+
+  return {
+    page: safePage,
+    limit: safeLimit,
+    search,
+    action,
+    actor,
+    status,
+    requestId,
+    since,
+    until
+  };
+}
+
 function validateLoginPayload(input) {
   const username = normalizeString(input?.username);
   const password = typeof input?.password === 'string' ? input.password : '';
@@ -157,6 +205,7 @@ module.exports = {
   validateUserPayload,
   validateBulkUserPayload,
   validateListQuery,
+  validateAuditQuery,
   validateLoginPayload,
   validateRefreshTokenPayload,
   validateIdempotencyKey,

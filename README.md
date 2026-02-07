@@ -14,6 +14,7 @@ Valor entregue:
 - Operacao segura para times de cadastro
 - Governanca para administracao
 - Base tecnica preparada para evolucao para persistencia externa
+ - Auditoria com filtros para investigacao rapida
 
 ## Frontend Experience (UX/UI)
 
@@ -64,8 +65,10 @@ Princpios aplicados:
 - Rotacao de refresh token em `/auth/refresh`.
 - Revogacao de sessao em `/auth/logout`.
 - Lockout temporario apos tentativas de login falhas.
+- `X-Request-Id` por request para rastreabilidade em logs.
 - Headers de seguranca HTTP (CSP, X-Frame-Options, HSTS, etc).
 - CORS por allowlist configuravel.
+- Proibicao de segredo default em ambiente `production` (`AUTH_SECRET` obrigatorio).
 
 ### Tratamento de erros
 - Erros tipados (`UNAUTHORIZED`, `FORBIDDEN`, `CONFLICT`, `TOO_MANY_REQUESTS`, etc).
@@ -96,7 +99,7 @@ Users:
 
 Observabilidade:
 - `GET /api/v1/stats`
-- `GET /api/v1/audit-logs` (admin)
+- `GET /api/v1/audit-logs` (admin, com filtros `search`, `action`, `actor`, `status`, `requestId`, `since`, `until`)
 - `GET /api/v1/metrics` (admin)
 - `GET /api/v1/openapi.json`
 
@@ -125,6 +128,12 @@ Observabilidade:
 
 8. Filtro local na auditoria
 - Impacto: acelera investigacao de eventos sem necessidade de nova requisicao.
+
+9. Filtro server-side de auditoria
+- Impacto: consultas mais precisas e escalaveis para compliance.
+
+10. Correlacao de requests via `X-Request-Id`
+- Impacto: facilita troubleshooting e observabilidade ponta-a-ponta.
 
 ## Tecnologias Utilizadas
 

@@ -7,6 +7,7 @@ const APP_CONFIG = Object.freeze({
   maxPageSize: 25,
   maxBodyBytes: 1_000_000,
   maxAuditEntries: 1_000,
+  maxAuditPageSize: 100,
   requestTimeoutMs: 10_000,
   auth: {
     issuer: 'fake-api-js-async',

@@ -10,7 +10,11 @@ const {
   UnauthorizedError,
   ValidationError
 } = require('../src/lib/errors');
-const { validateIdempotencyKey, validateRefreshTokenPayload } = require('../src/lib/validators');
+const {
+  validateAuditQuery,
+  validateIdempotencyKey,
+  validateRefreshTokenPayload
+} = require('../src/lib/validators');
 
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
 const STARTED_AT = Date.now();
@@ -51,6 +55,7 @@ function createServer(context) {
 
     try {
       applyBaseSecurityHeaders(response);
+      response.setHeader('X-Request-Id', requestId);
 
       if (isApiRoute) {
         applyCorsHeaders(request, response, context.appConfig.cors.allowedOrigins);
@@ -272,6 +277,7 @@ async function handleLegacyApi(context, request, response, requestContext) {
 
 async function handleApiV1(context, request, response, requestContext) {
   const { method, pathname, url } = requestContext;
+  response.setHeader('X-API-Version', 'v1');
 
   if (method === 'GET' && pathname === '/api/v1/openapi.json') {
     requestContext.route = 'GET /api/v1/openapi.json';
@@ -515,10 +521,23 @@ async function handleApiV1(context, request, response, requestContext) {
     requestContext.route = 'GET /api/v1/audit-logs';
     assertRole(authUser, 'admin');
 
-    const page = parseIntOr(url.searchParams.get('page'), 1);
-    const limit = parseIntOr(url.searchParams.get('limit'), 20);
+    const parsed = validateAuditQuery({
+      page: url.searchParams.get('page'),
+      limit: url.searchParams.get('limit'),
+      search: url.searchParams.get('search'),
+      action: url.searchParams.get('action'),
+      actor: url.searchParams.get('actor'),
+      status: url.searchParams.get('status'),
+      requestId: url.searchParams.get('requestId'),
+      since: url.searchParams.get('since'),
+      until: url.searchParams.get('until')
+    }, {
+      page: 1,
+      limit: 20,
+      maxLimit: context.appConfig.maxAuditPageSize
+    });
 
-    const result = context.auditService.list({ page, limit });
+    const result = context.auditService.list(parsed);
 
     requestContext.statusCode = 200;
     sendV1(response, 200, result.data, requestContext.requestId, result.meta);
@@ -885,7 +904,7 @@ function createOpenApiDocument() {
     openapi: '3.0.3',
     info: {
       title: 'Fake API JS Async',
-      version: '1.1.0',
+      version: '1.2.0',
       description: 'Versioned backend API with RBAC, rotating refresh tokens, audit logs and metrics.'
     },
     servers: [{ url: '/api/v1' }],
@@ -917,7 +936,23 @@ function createOpenApiDocument() {
       },
       '/users/{id}/restore': { post: { summary: 'Restore user (admin)', security: [{ bearerAuth: [] }] } },
       '/stats': { get: { summary: 'Get user stats', security: [{ bearerAuth: [] }] } },
-      '/audit-logs': { get: { summary: 'List audit events (admin)', security: [{ bearerAuth: [] }] } },
+      '/audit-logs': {
+        get: {
+          summary: 'List audit events (admin)',
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1 } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100 } },
+            { name: 'search', in: 'query', schema: { type: 'string' } },
+            { name: 'action', in: 'query', schema: { type: 'string' } },
+            { name: 'actor', in: 'query', schema: { type: 'string' } },
+            { name: 'status', in: 'query', schema: { type: 'string' } },
+            { name: 'requestId', in: 'query', schema: { type: 'string' } },
+            { name: 'since', in: 'query', schema: { type: 'string', format: 'date-time' } },
+            { name: 'until', in: 'query', schema: { type: 'string', format: 'date-time' } }
+          ]
+        }
+      },
       '/metrics': { get: { summary: 'Get metrics snapshot (admin)', security: [{ bearerAuth: [] }] } }
     }
   };
